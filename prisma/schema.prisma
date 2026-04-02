@@ -1,0 +1,47 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Transaction {
+  id         String   @id @default(cuid())
+  name       String
+  amount     Float
+  type       String   // "income" or "expense"
+  recurrence String   @default("none") // none, weekly, biweekly, monthly, yearly
+  startDate  String   // YYYY-MM-DD
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  overrides Override[]
+}
+
+model Override {
+  id             String  @id @default(cuid())
+  transactionId  String
+  occurrenceDate String  // The original occurrence date YYYY-MM-DD
+  name           String?
+  amount         Float?
+  type           String?
+  deleted        Boolean @default(false)
+  movedTo        String? // New date if moved YYYY-MM-DD
+
+  transaction Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+
+  @@unique([transactionId, occurrenceDate])
+}
+
+model BalanceReset {
+  id     String @id @default(cuid())
+  date   String @unique // YYYY-MM-DD
+  amount Float
+}
+
+model Settings {
+  id              String @id @default("default")
+  startingBalance Float  @default(0)
+}
