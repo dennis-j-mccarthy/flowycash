@@ -14,25 +14,18 @@ async function main() {
   await prisma.settings.deleteMany();
 
   // Starting balance doesn't matter much before Apr 2 since we have a balance reset.
-  // Set it to 590.70 (visible on Mar 29 in the source app).
   await prisma.settings.create({
     data: { id: "default", startingBalance: 335.71 },
   });
 
-  // Balance reset on Apr 2 — "Checking Balance" in source app snaps balance to $6,045.00
+  // Balance reset on Apr 2
   await prisma.balanceReset.create({
     data: { date: "2026-04-02", amount: 6045.00 },
   });
 
-
   // ============================================
   // RECURRING TRANSACTIONS
   // ============================================
-
-  // INCOME - Biweekly pay, amounts vary per occurrence
-  // Apr 1: $4,500 / $1,400. Apr 15: $4,500 / $1,300. Apr 29: Beth 2k repay only.
-  // May 1: $4,400 / $1,300. May 15: $4,500 / $1,300. May 29: $4,500 / $1,300 + Beth 2k repay.
-  // Using monthly recurring with the most common values, plus one-time adjustments.
 
   // Ave Bi-Weekly — amounts vary per month so 1st is one-time each
   await prisma.transaction.create({
@@ -72,7 +65,7 @@ async function main() {
     data: { name: "Ave Stipend", amount: 1300, type: "income", recurrence: "none", startDate: "2026-05-29" },
   });
 
-  // Beth 2k repay — May 1 income (matches balance), May 2 EXPENSE, May 29 income
+  // Beth 2k repay
   await prisma.transaction.create({
     data: { name: "Beth 2k repay", amount: 1000, type: "income", recurrence: "none", startDate: "2026-05-01" },
   });
@@ -83,7 +76,7 @@ async function main() {
     data: { name: "Beth 2k repay", amount: 1000, type: "expense", recurrence: "none", startDate: "2026-05-29" },
   });
 
-  // EXPENSES - Weekly (every Monday)
+  // EXPENSES - Weekly (every Monday) — discretionary, NOT autopay
   await prisma.transaction.create({
     data: { name: "Beth Spending", amount: 40, type: "expense", recurrence: "weekly", startDate: "2026-03-30" },
   });
@@ -105,47 +98,45 @@ async function main() {
     data: { name: "Amber Pet Care", amount: 200, type: "expense", recurrence: "weekly", startDate: "2026-04-04" },
   });
 
-  // EXPENSES - Monthly on the 1st
-  // Bella Rent: $2,600 in April, $2,650 in May
+  // Bella Rent — NOT autopay (manual payment)
   await prisma.transaction.create({
     data: { name: "Bella Rent", amount: 2600, type: "expense", recurrence: "none", startDate: "2026-04-01" },
   });
   await prisma.transaction.create({
     data: { name: "Bella Rent", amount: 2650, type: "expense", recurrence: "none", startDate: "2026-05-01" },
   });
+
+  // Chase Freedom — autopay
   await prisma.transaction.create({
-    data: { name: "Chase Freedom", amount: 40, type: "expense", recurrence: "monthly", startDate: "2026-04-01" },
+    data: { name: "Chase Freedom", amount: 40, type: "expense", recurrence: "monthly", startDate: "2026-04-01", autopay: true },
   });
 
-  // Florida Power and NEW RENT: appear on Apr 1 AND Apr 30, but NOT May 1
-  // Treating as one-time entries to match exactly
+  // Florida Power — autopay utility
   await prisma.transaction.create({
-    data: { name: "Florida Power", amount: 70, type: "expense", recurrence: "none", startDate: "2026-04-01" },
+    data: { name: "Florida Power", amount: 70, type: "expense", recurrence: "none", startDate: "2026-04-01", autopay: true },
   });
   await prisma.transaction.create({
     data: { name: "NEW RENT", amount: 2600, type: "income", recurrence: "none", startDate: "2026-04-01" },
   });
   await prisma.transaction.create({
-    data: { name: "Florida Power", amount: 70, type: "expense", recurrence: "none", startDate: "2026-04-30" },
+    data: { name: "Florida Power", amount: 70, type: "expense", recurrence: "none", startDate: "2026-04-30", autopay: true },
   });
   await prisma.transaction.create({
     data: { name: "NEW RENT", amount: 2600, type: "income", recurrence: "none", startDate: "2026-04-30" },
   });
-  // Florida Power and NEW RENT do NOT appear in May 30 screenshot — removed
 
-  // Monthly on the 3rd (Fri in April)
+  // Black Hills Energy, Century Link — autopay utilities
   await prisma.transaction.create({
-    data: { name: "Black Hills Energy", amount: 15, type: "expense", recurrence: "none", startDate: "2026-04-03" },
+    data: { name: "Black Hills Energy", amount: 15, type: "expense", recurrence: "none", startDate: "2026-04-03", autopay: true },
   });
   await prisma.transaction.create({
-    data: { name: "Century Link", amount: 64.77, type: "expense", recurrence: "none", startDate: "2026-04-03" },
-  });
-  // In May, these appear on the 2nd instead of 3rd
-  await prisma.transaction.create({
-    data: { name: "Black Hills Energy", amount: 15, type: "expense", recurrence: "none", startDate: "2026-05-02" },
+    data: { name: "Century Link", amount: 64.77, type: "expense", recurrence: "none", startDate: "2026-04-03", autopay: true },
   });
   await prisma.transaction.create({
-    data: { name: "Century Link", amount: 64.77, type: "expense", recurrence: "none", startDate: "2026-05-02" },
+    data: { name: "Black Hills Energy", amount: 15, type: "expense", recurrence: "none", startDate: "2026-05-02", autopay: true },
+  });
+  await prisma.transaction.create({
+    data: { name: "Century Link", amount: 64.77, type: "expense", recurrence: "none", startDate: "2026-05-02", autopay: true },
   });
   await prisma.transaction.create({
     data: { name: "Face foundarie", amount: 0, type: "expense", recurrence: "none", startDate: "2026-04-03" },
@@ -154,134 +145,135 @@ async function main() {
     data: { name: "Face foundarie", amount: 90, type: "expense", recurrence: "none", startDate: "2026-05-02" },
   });
 
-  // Monthly on the 6th
+  // Pet Best Insurance — autopay
   await prisma.transaction.create({
-    data: { name: "Pet Best Insurance", amount: 76, type: "expense", recurrence: "monthly", startDate: "2026-04-06" },
+    data: { name: "Pet Best Insurance", amount: 76, type: "expense", recurrence: "monthly", startDate: "2026-04-06", autopay: true },
+  });
+  // Pocketsmith, Web Flow — autopay subscriptions
+  await prisma.transaction.create({
+    data: { name: "Pocketsmith", amount: 14.95, type: "expense", recurrence: "monthly", startDate: "2026-04-06", autopay: true },
   });
   await prisma.transaction.create({
-    data: { name: "Pocketsmith", amount: 14.95, type: "expense", recurrence: "monthly", startDate: "2026-04-06" },
-  });
-  await prisma.transaction.create({
-    data: { name: "Web Flow", amount: 24, type: "expense", recurrence: "monthly", startDate: "2026-04-06" },
-  });
-
-  // Monthly on the 7th
-  await prisma.transaction.create({
-    data: { name: "Mercury Card", amount: 195, type: "expense", recurrence: "monthly", startDate: "2026-04-07" },
-  });
-  await prisma.transaction.create({
-    data: { name: "VERIZON", amount: 265, type: "expense", recurrence: "monthly", startDate: "2026-04-07" },
+    data: { name: "Web Flow", amount: 24, type: "expense", recurrence: "monthly", startDate: "2026-04-06", autopay: true },
   });
 
-  // Monthly on the 12th
+  // Mercury Card, VERIZON — autopay
   await prisma.transaction.create({
-    data: { name: "Geico", amount: 203, type: "expense", recurrence: "monthly", startDate: "2026-04-12" },
+    data: { name: "Mercury Card", amount: 195, type: "expense", recurrence: "monthly", startDate: "2026-04-07", autopay: true },
   });
   await prisma.transaction.create({
-    data: { name: "Life Insurance", amount: 282, type: "expense", recurrence: "monthly", startDate: "2026-04-12" },
-  });
-
-  // Monthly on the 13th
-  await prisma.transaction.create({
-    data: { name: "Claud AI", amount: 20, type: "expense", recurrence: "monthly", startDate: "2026-04-13" },
-  });
-  await prisma.transaction.create({
-    data: { name: "Den Capital One", amount: 146, type: "expense", recurrence: "monthly", startDate: "2026-04-13" },
+    data: { name: "VERIZON", amount: 265, type: "expense", recurrence: "monthly", startDate: "2026-04-07", autopay: true },
   });
 
-  // Monthly on the 14th
+  // Geico, Life Insurance — autopay
   await prisma.transaction.create({
-    data: { name: "Amazon Prime", amount: 15, type: "expense", recurrence: "monthly", startDate: "2026-04-14" },
+    data: { name: "Geico", amount: 203, type: "expense", recurrence: "monthly", startDate: "2026-04-12", autopay: true },
   });
   await prisma.transaction.create({
-    data: { name: "Beth Capitol One", amount: 105, type: "expense", recurrence: "monthly", startDate: "2026-04-14" },
-  });
-  await prisma.transaction.create({
-    data: { name: "Mailchimp", amount: 20, type: "expense", recurrence: "monthly", startDate: "2026-04-14" },
-  });
-  await prisma.transaction.create({
-    data: { name: "Mattress Firm", amount: 113, type: "expense", recurrence: "monthly", startDate: "2026-04-14" },
+    data: { name: "Life Insurance", amount: 282, type: "expense", recurrence: "monthly", startDate: "2026-04-12", autopay: true },
   });
 
-  // Monthly on the 15th
+  // Claud AI — autopay subscription
   await prisma.transaction.create({
-    data: { name: "Home Depot", amount: 60, type: "expense", recurrence: "monthly", startDate: "2026-04-15" },
+    data: { name: "Claud AI", amount: 20, type: "expense", recurrence: "monthly", startDate: "2026-04-13", autopay: true },
+  });
+  // Den Capital One — autopay credit card
+  await prisma.transaction.create({
+    data: { name: "Den Capital One", amount: 146, type: "expense", recurrence: "monthly", startDate: "2026-04-13", autopay: true },
+  });
+
+  // Amazon Prime, Beth Capitol One, Mailchimp, Mattress Firm — autopay
+  await prisma.transaction.create({
+    data: { name: "Amazon Prime", amount: 15, type: "expense", recurrence: "monthly", startDate: "2026-04-14", autopay: true },
   });
   await prisma.transaction.create({
-    data: { name: "Hostgator", amount: 100, type: "expense", recurrence: "monthly", startDate: "2026-04-15" },
+    data: { name: "Beth Capitol One", amount: 105, type: "expense", recurrence: "monthly", startDate: "2026-04-14", autopay: true },
   });
   await prisma.transaction.create({
-    data: { name: "Mid Journey", amount: 10, type: "expense", recurrence: "monthly", startDate: "2026-04-15" },
+    data: { name: "Mailchimp", amount: 20, type: "expense", recurrence: "monthly", startDate: "2026-04-14", autopay: true },
   });
-  // Mortgage — Apr 17, then 15th monthly from May onward
+  await prisma.transaction.create({
+    data: { name: "Mattress Firm", amount: 113, type: "expense", recurrence: "monthly", startDate: "2026-04-14", autopay: true },
+  });
+
+  // Home Depot, Hostgator, Mid Journey, syncrony bank — autopay
+  await prisma.transaction.create({
+    data: { name: "Home Depot", amount: 60, type: "expense", recurrence: "monthly", startDate: "2026-04-15", autopay: true },
+  });
+  await prisma.transaction.create({
+    data: { name: "Hostgator", amount: 100, type: "expense", recurrence: "monthly", startDate: "2026-04-15", autopay: true },
+  });
+  await prisma.transaction.create({
+    data: { name: "Mid Journey", amount: 10, type: "expense", recurrence: "monthly", startDate: "2026-04-15", autopay: true },
+  });
+  await prisma.transaction.create({
+    data: { name: "syncrony bank", amount: 110, type: "expense", recurrence: "monthly", startDate: "2026-04-15", autopay: true },
+  });
+
+  // Mortgage — NOT autopay (can be moved reluctantly)
   await prisma.transaction.create({
     data: { name: "Mortgage", amount: 2550, type: "expense", recurrence: "none", startDate: "2026-04-17" },
   });
   await prisma.transaction.create({
     data: { name: "Mortgage", amount: 2550, type: "expense", recurrence: "monthly", startDate: "2026-05-15" },
   });
+
+  // Chewy for Arw — autopay
   await prisma.transaction.create({
-    data: { name: "syncrony bank", amount: 110, type: "expense", recurrence: "monthly", startDate: "2026-04-15" },
+    data: { name: "Chewy for Arw", amount: 41.98, type: "expense", recurrence: "monthly", startDate: "2026-04-16", autopay: true },
   });
 
-  // Monthly on the 16th
+  // Express Wash — autopay
   await prisma.transaction.create({
-    data: { name: "Chewy for Arw", amount: 41.98, type: "expense", recurrence: "monthly", startDate: "2026-04-16" },
+    data: { name: "Express Wash f", amount: 20.29, type: "expense", recurrence: "monthly", startDate: "2026-04-22", autopay: true },
   });
 
-  // Monthly on the 22nd
+  // Comcast — autopay
   await prisma.transaction.create({
-    data: { name: "Express Wash f", amount: 20.29, type: "expense", recurrence: "monthly", startDate: "2026-04-22" },
+    data: { name: "Comcast", amount: 65, type: "expense", recurrence: "monthly", startDate: "2026-04-23", autopay: true },
   });
 
-  // Monthly on the 23rd
+  // Hostgator (26th), Prime Video, The Hartford — autopay
   await prisma.transaction.create({
-    data: { name: "Comcast", amount: 65, type: "expense", recurrence: "monthly", startDate: "2026-04-23" },
+    data: { name: "Hostgator (26th)", amount: 16, type: "expense", recurrence: "monthly", startDate: "2026-03-26", autopay: true },
+  });
+  await prisma.transaction.create({
+    data: { name: "Prime Video", amount: 11.28, type: "expense", recurrence: "monthly", startDate: "2026-03-26", autopay: true },
+  });
+  await prisma.transaction.create({
+    data: { name: "The Hartford Insurance", amount: 26, type: "expense", recurrence: "monthly", startDate: "2026-03-26", autopay: true },
   });
 
-  // Monthly on the 26th
+  // pay summit, Vimeo — autopay
   await prisma.transaction.create({
-    data: { name: "Hostgator (26th)", amount: 16, type: "expense", recurrence: "monthly", startDate: "2026-03-26" },
+    data: { name: "pay summit and...", amount: 28, type: "expense", recurrence: "monthly", startDate: "2026-03-27", autopay: true },
   });
   await prisma.transaction.create({
-    data: { name: "Prime Video", amount: 11.28, type: "expense", recurrence: "monthly", startDate: "2026-03-26" },
-  });
-  await prisma.transaction.create({
-    data: { name: "The Hartford Insurance", amount: 26, type: "expense", recurrence: "monthly", startDate: "2026-03-26" },
+    data: { name: "Vimeo", amount: 12, type: "expense", recurrence: "monthly", startDate: "2026-03-27", autopay: true },
   });
 
-  // Monthly on the 27th
+  // Hulu, State Farm — autopay
   await prisma.transaction.create({
-    data: { name: "pay summit and...", amount: 28, type: "expense", recurrence: "monthly", startDate: "2026-03-27" },
+    data: { name: "Hulu", amount: 110, type: "expense", recurrence: "monthly", startDate: "2026-03-28", autopay: true },
   });
   await prisma.transaction.create({
-    data: { name: "Vimeo", amount: 12, type: "expense", recurrence: "monthly", startDate: "2026-03-27" },
-  });
-
-  // Monthly on the 28th
-  await prisma.transaction.create({
-    data: { name: "Hulu", amount: 110, type: "expense", recurrence: "monthly", startDate: "2026-03-28" },
-  });
-  await prisma.transaction.create({
-    data: { name: "State Farm Homeowners", amount: 69, type: "expense", recurrence: "monthly", startDate: "2026-03-28" },
+    data: { name: "State Farm Homeowners", amount: 69, type: "expense", recurrence: "monthly", startDate: "2026-03-28", autopay: true },
   });
 
-  // Monthly on the 30th
+  // Netflix — autopay
   await prisma.transaction.create({
-    data: { name: "Netflix", amount: 19.99, type: "expense", recurrence: "monthly", startDate: "2026-03-30" },
+    data: { name: "Netflix", amount: 19.99, type: "expense", recurrence: "monthly", startDate: "2026-03-30", autopay: true },
   });
 
   // ============================================
-  // ONE-TIME TRANSACTIONS
+  // ONE-TIME TRANSACTIONS (not autopay unless noted)
   // ============================================
 
-  // == Pre-April (visible in the April calendar view) ==
   await prisma.transaction.create({
     data: { name: "Bob Castellino", amount: 500, type: "expense", recurrence: "none", startDate: "2026-03-30" },
   });
 
-  // == April 2026 ==
-  // Sat Apr 4
+  // Apr 4
   await prisma.transaction.create({
     data: { name: "amber last week", amount: 225, type: "expense", recurrence: "none", startDate: "2026-04-04" },
   });
@@ -289,9 +281,7 @@ async function main() {
     data: { name: "Beth debt", amount: 333, type: "expense", recurrence: "none", startDate: "2026-04-04" },
   });
 
-  // Sun Apr 5 (empty)
-
-  // Fri Apr 9
+  // Apr 9
   await prisma.transaction.create({
     data: { name: "Attitude Credit", amount: 299, type: "expense", recurrence: "none", startDate: "2026-04-09" },
   });
@@ -304,21 +294,18 @@ async function main() {
 
   // Monthly on the 11th
   await prisma.transaction.create({
-    data: { name: "Express Toll and...", amount: 30, type: "expense", recurrence: "monthly", startDate: "2026-04-11" },
+    data: { name: "Express Toll and...", amount: 30, type: "expense", recurrence: "monthly", startDate: "2026-04-11", autopay: true },
   });
   await prisma.transaction.create({
-    data: { name: "Open AI", amount: 20, type: "expense", recurrence: "monthly", startDate: "2026-04-11" },
+    data: { name: "Open AI", amount: 20, type: "expense", recurrence: "monthly", startDate: "2026-04-11", autopay: true },
   });
 
-  // Sun Apr 12 (also appears May 12 — monthly recurring)
+  // wayfair — autopay
   await prisma.transaction.create({
-    data: { name: "wayfair", amount: 36, type: "expense", recurrence: "monthly", startDate: "2026-04-12" },
+    data: { name: "wayfair", amount: 36, type: "expense", recurrence: "monthly", startDate: "2026-04-12", autopay: true },
   });
 
-  // Sat Apr 16 (not visible? Let me check — May 2026 screenshot shows Chewy for Arw on Sat May 16 $41.98, so it's monthly)
-  // Actually in the May screenshot, Sat May 16 shows: Chewy for Arw $41.98, Vanessa 2 of 3 $500 (one-time)
-
-  // Monthly on the 17th
+  // Monthly on the 17th — NOT autopay (manual payments)
   await prisma.transaction.create({
     data: { name: "Brightway credit", amount: 41, type: "expense", recurrence: "monthly", startDate: "2026-04-17" },
   });
@@ -335,7 +322,7 @@ async function main() {
     data: { name: "US Bank Mastercard", amount: 40.73, type: "expense", recurrence: "monthly", startDate: "2026-04-17" },
   });
 
-  // Monthly on the 25th
+  // Monthly on the 25th — NOT autopay
   await prisma.transaction.create({
     data: { name: "ENT", amount: 450, type: "expense", recurrence: "monthly", startDate: "2026-04-25" },
   });
@@ -349,17 +336,15 @@ async function main() {
     data: { name: "Webflow", amount: 20, type: "expense", recurrence: "monthly", startDate: "2026-04-25" },
   });
 
-  // Fri May 1 one-time
+  // May one-time
   await prisma.transaction.create({
     data: { name: "Vanessa 2 of 3", amount: 500, type: "expense", recurrence: "none", startDate: "2026-05-01" },
   });
-
-  // Sun May 3 (visible in May screenshot)
   await prisma.transaction.create({
-    data: { name: "You Tube", amount: 78.98, type: "expense", recurrence: "none", startDate: "2026-05-03" },
+    data: { name: "You Tube", amount: 78.98, type: "expense", recurrence: "none", startDate: "2026-05-03", autopay: true },
   });
 
-  // Sun May 10
+  // May 10
   await prisma.transaction.create({
     data: { name: "Attitude Credit", amount: 299, type: "expense", recurrence: "none", startDate: "2026-05-10" },
   });
@@ -370,16 +355,82 @@ async function main() {
     data: { name: "Den Honda", amount: 500, type: "expense", recurrence: "none", startDate: "2026-05-10" },
   });
 
-  // Mon May 11 — covered by monthly recurring from Apr 11
+  // Monthly on 11th, 17th, 25th — covered by recurring from April
 
-  // Sat May 16 — only Amber Pet Care (weekly) and Chewy for Arw (monthly), no Vanessa
+  // ============================================
+  // TAGS — batch update by name pattern
+  // ============================================
+  const tagMap: Record<string, string> = {
+    "Ave Bi-Weekly": "income",
+    "Ave Stipend": "income",
+    "Beth 2k repay": "debt",
+    "NEW RENT": "rent-income",
+    "Beth Spending": "allowance",
+    "Cash Out": "allowance",
+    "Den spending": "allowance",
+    "Gas Den and B": "auto,gas",
+    "Wine and Booze": "liquor",
+    "Amber Pet Care": "pets",
+    "Bella Rent": "housing",
+    "Chase Freedom": "debt",
+    "Florida Power": "utilities",
+    "Black Hills Energy": "utilities",
+    "Century Link": "utilities",
+    "Face foundarie": "personal",
+    "Pet Best Insurance": "pets,insurance",
+    "Pocketsmith": "subscriptions",
+    "Web Flow": "subscriptions",
+    "Mercury Card": "debt",
+    "VERIZON": "utilities",
+    "Geico": "auto,insurance",
+    "Life Insurance": "insurance",
+    "Claud AI": "subscriptions",
+    "Den Capital One": "debt",
+    "Amazon Prime": "subscriptions",
+    "Beth Capitol One": "debt",
+    "Mailchimp": "subscriptions",
+    "Mattress Firm": "debt",
+    "Home Depot": "debt",
+    "Hostgator": "subscriptions",
+    "Mid Journey": "subscriptions",
+    "Mortgage": "housing",
+    "syncrony bank": "debt",
+    "Chewy for Arw": "pets",
+    "Express Wash f": "auto",
+    "Comcast": "utilities",
+    "Hostgator (26th)": "subscriptions",
+    "Prime Video": "subscriptions",
+    "The Hartford Insurance": "insurance",
+    "pay summit and...": "subscriptions",
+    "Vimeo": "subscriptions",
+    "Hulu": "subscriptions",
+    "State Farm Homeowners": "housing,insurance",
+    "Netflix": "subscriptions",
+    "Bob Castellino": "personal",
+    "amber last week": "pets",
+    "Beth debt": "loan",
+    "Attitude Credit": "debt",
+    "Den Honda": "auto",
+    "Express Toll and...": "auto,tolls",
+    "Open AI": "subscriptions",
+    "wayfair": "debt",
+    "Brightway credit": "debt",
+    "Honda Beth": "auto",
+    "Mission Credit": "debt",
+    "Supplements": "health",
+    "US Bank Mastercard": "debt",
+    "ENT": "debt",
+    "Mountain View": "utilities",
+    "Triview Metro": "utilities",
+    "Webflow": "subscriptions",
+    "Vanessa 2 of 3": "personal",
+    "You Tube": "subscriptions",
+    "Beth Honda": "auto",
+  };
 
-  // Sun May 17 — covered by monthly recurring from Apr 17
-
-  // Sat May 18
-  // (Amber Pet Care is weekly, already handled)
-
-  // Sat May 25 — covered by monthly recurring from Apr 25
+  for (const [name, tags] of Object.entries(tagMap)) {
+    await prisma.transaction.updateMany({ where: { name }, data: { tags } });
+  }
 
   console.log("Seed complete!");
 }

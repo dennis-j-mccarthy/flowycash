@@ -14,6 +14,9 @@ model Transaction {
   type       String   // "income" or "expense"
   recurrence String   @default("none") // none, weekly, biweekly, monthly, yearly
   startDate  String   // YYYY-MM-DD
+  autopay    Boolean  @default(false)
+  tags       String   @default("")  // comma-separated tags
+  highlight  String   @default("")  // color highlight: "", "red", "orange", "yellow", "green", "blue", "purple"
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 

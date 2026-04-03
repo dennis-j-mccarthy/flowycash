@@ -10,6 +10,9 @@ export async function POST(req: NextRequest) {
       type: body.type,
       recurrence: body.recurrence || "none",
       startDate: body.startDate,
+      autopay: body.autopay ?? false,
+      tags: body.tags ?? "",
+      highlight: body.highlight ?? "",
     },
   });
   return NextResponse.json(tx, { status: 201 });

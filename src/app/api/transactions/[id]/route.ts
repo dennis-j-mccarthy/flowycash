@@ -5,19 +5,27 @@ export async function PUT(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const { id } = await params;
-  const body = await req.json();
-  const data: Record<string, unknown> = {};
-  if (body.name !== undefined) data.name = body.name;
-  if (body.amount !== undefined) data.amount = body.amount;
-  if (body.type !== undefined) data.type = body.type;
-  if (body.startDate !== undefined) data.startDate = body.startDate;
-  if (body.recurrence !== undefined) data.recurrence = body.recurrence;
-  const tx = await prisma.transaction.update({
-    where: { id },
-    data,
-  });
-  return NextResponse.json(tx);
+  try {
+    const { id } = await params;
+    const body = await req.json();
+    const data: Record<string, unknown> = {};
+    if (body.name !== undefined) data.name = body.name;
+    if (body.amount !== undefined) data.amount = body.amount;
+    if (body.type !== undefined) data.type = body.type;
+    if (body.startDate !== undefined) data.startDate = body.startDate;
+    if (body.recurrence !== undefined) data.recurrence = body.recurrence;
+    if (body.autopay !== undefined) data.autopay = body.autopay;
+    if (body.tags !== undefined) data.tags = body.tags;
+    if (body.highlight !== undefined) data.highlight = body.highlight;
+    const tx = await prisma.transaction.update({
+      where: { id },
+      data,
+    });
+    return NextResponse.json(tx);
+  } catch (e) {
+    console.error("PUT /api/transactions/[id] error:", e);
+    return NextResponse.json({ error: String(e) }, { status: 500 });
+  }
 }
 
 export async function DELETE(

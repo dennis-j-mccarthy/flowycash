@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Pockesmith - Budget Forecast",
-  description: "Budget forecasting with calendar view",
+  title: "flowycash.com — Personal Cashflow Calendar",
+  description: "Visual cashflow forecasting on a calendar",
 };
 
 export default function RootLayout({

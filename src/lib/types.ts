@@ -5,6 +5,9 @@ export interface Transaction {
   type: string;
   recurrence: string;
   startDate: string;
+  autopay: boolean;
+  tags: string;
+  highlight: string;
 }
 
 export interface OverrideData {
