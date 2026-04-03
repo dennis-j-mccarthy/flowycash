@@ -1478,10 +1478,31 @@ export default function BudgetForecast() {
                 boxShadow: theme === key ? "0 0 0 2px #fff, 0 0 0 4px #1e293b" : "none" }} />
           ))}
         </div>
-        <button onClick={() => { setDemo((d) => { const v = !d; localStorage.setItem("flowycash-demo", String(v)); if (v && !demoState) setDemoState(buildDemoData()); return v; }); }} className="bf-btn"
-          style={{ padding: "4px 12px", borderRadius: 20, border: demo ? "1.5px solid #fbbf24" : "1.5px solid #d1d5db", background: demo ? "#fef3c7" : "#fff", color: demo ? "#92400e" : "#64748b", fontSize: 10, fontWeight: 600, letterSpacing: "0.02em" }}>
-          Demo
-        </button>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <a href="/api/export" download className="bf-btn"
+            style={{ padding: "4px 10px", borderRadius: 20, border: "1.5px solid #d1d5db", background: "#fff", color: "#64748b", fontSize: 10, fontWeight: 600, textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 4 }}>
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Backup
+          </a>
+          <label className="bf-btn"
+            style={{ padding: "4px 10px", borderRadius: 20, border: "1.5px solid #d1d5db", background: "#fff", color: "#64748b", fontSize: 10, fontWeight: 600, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4 }}>
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            Restore
+            <input type="file" accept=".json" hidden onChange={async (e) => {
+              const file = e.target.files?.[0];
+              if (!file) return;
+              const text = await file.text();
+              if (!confirm("This will replace ALL current data. Continue?")) return;
+              await callApi("/api/import", { method: "POST", body: text });
+              await reload();
+              e.target.value = "";
+            }} />
+          </label>
+          <button onClick={() => { setDemo((d) => { const v = !d; localStorage.setItem("flowycash-demo", String(v)); if (v && !demoState) setDemoState(buildDemoData()); return v; }); }} className="bf-btn"
+            style={{ padding: "4px 12px", borderRadius: 20, border: demo ? "1.5px solid #fbbf24" : "1.5px solid #d1d5db", background: demo ? "#fef3c7" : "#fff", color: demo ? "#92400e" : "#64748b", fontSize: 10, fontWeight: 600, letterSpacing: "0.02em" }}>
+            Demo
+          </button>
+        </div>
       </div>
 
       {/* Touch drag ghost */}
