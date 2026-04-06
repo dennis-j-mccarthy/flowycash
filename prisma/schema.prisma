@@ -9,6 +9,7 @@ datasource db {
 
 model Transaction {
   id         String   @id @default(cuid())
+  userId     String   @default("default")
   name       String
   amount     Float
   type       String   // "income" or "expense"
@@ -17,10 +18,13 @@ model Transaction {
   autopay    Boolean  @default(false)
   tags       String   @default("")  // comma-separated tags
   highlight  String   @default("")  // color highlight: "", "red", "orange", "yellow", "green", "blue", "purple"
+  note       String   @default("")  // user annotation
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
   overrides Override[]
+
+  @@index([userId])
 }
 
 model Override {
@@ -40,11 +44,28 @@ model Override {
 
 model BalanceReset {
   id     String @id @default(cuid())
-  date   String @unique // YYYY-MM-DD
+  userId String @default("default")
+  date   String // YYYY-MM-DD
   amount Float
+
+  @@unique([userId, date])
+  @@index([userId])
 }
 
 model Settings {
   id              String @id @default("default")
+  userId          String @default("default")
   startingBalance Float  @default(0)
+
+  @@unique([userId])
+}
+
+model MonthNote {
+  id     String @id @default(cuid())
+  userId String @default("default")
+  month  String // YYYY-MM
+  note   String @default("")
+
+  @@unique([userId, month])
+  @@index([userId])
 }

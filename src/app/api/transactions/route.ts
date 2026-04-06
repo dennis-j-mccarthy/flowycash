@@ -13,6 +13,7 @@ export async function POST(req: NextRequest) {
       autopay: body.autopay ?? false,
       tags: body.tags ?? "",
       highlight: body.highlight ?? "",
+      note: body.note ?? "",
     },
   });
   return NextResponse.json(tx, { status: 201 });

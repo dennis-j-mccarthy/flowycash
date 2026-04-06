@@ -17,6 +17,7 @@ export async function PUT(
     if (body.autopay !== undefined) data.autopay = body.autopay;
     if (body.tags !== undefined) data.tags = body.tags;
     if (body.highlight !== undefined) data.highlight = body.highlight;
+    if (body.note !== undefined) data.note = body.note;
     const tx = await prisma.transaction.update({
       where: { id },
       data,

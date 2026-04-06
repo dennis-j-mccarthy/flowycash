@@ -8,6 +8,7 @@ export interface Transaction {
   autopay: boolean;
   tags: string;
   highlight: string;
+  note: string;
 }
 
 export interface OverrideData {
@@ -26,4 +27,5 @@ export interface AppState {
   overrides: Record<string, OverrideData>;
   balanceResets: Record<string, number>;
   startingBalance: number;
+  monthNotes?: Record<string, string>;
 }
