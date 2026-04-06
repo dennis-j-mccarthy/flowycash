@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  body { font-family: sans-serif; margin: 20px; }
+  .item { padding: 12px; margin: 4px 0; background: #f1f5f9; border-radius: 8px; display: flex; gap: 10px; align-items: center; }
+  .handle { font-size: 18px; color: #999; touch-action: none; user-select: none; cursor: grab; padding: 4px; }
+  .day { padding: 10px 16px; margin: 4px 0; background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; font-weight: bold; }
+  .day.over { background: #bfdbfe; outline: 2px solid #3b82f6; }
+  #ghost { display: none; position: fixed; pointer-events: none; z-index: 100; background: #fff; border-radius: 8px; padding: 6px 12px; box-shadow: 0 4px 16px rgba(0,0,0,0.2); border: 1.5px solid #3b82f6; font-size: 13px; font-weight: bold; }
+  #log { position: fixed; bottom: 0; left: 0; right: 0; background: #1e293b; color: #4ade80; font-size: 12px; padding: 8px; font-family: monospace; max-height: 150px; overflow: auto; }
+</style>
+</head>
+<body>
+<h3>Touch Drag Test</h3>
+
+<div class="day" data-day="apr9">Apr 9</div>
+<div class="item"><span class="handle" id="h1">≡</span> Beth debt $333</div>
+<div class="item"><span class="handle" id="h2">≡</span> Den Honda $700</div>
+
+<div class="day" data-day="apr10">Apr 10</div>
+<div class="item"><span class="handle" id="h3">≡</span> Some item</div>
+
+<div class="day" data-day="apr11">Apr 11</div>
+
+<div id="ghost"></div>
+<div id="log">Touch log...</div>
+
+<script>
+const ghost = document.getElementById('ghost');
+const log = document.getElementById('log');
+let dragging = null;
+let overDay = null;
+
+function addLog(msg) {
+  log.textContent = msg + '\n' + log.textContent.split('\n').slice(0,10).join('\n');
+}
+
+document.querySelectorAll('.handle').forEach(h => {
+  h.addEventListener('touchstart', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragging = h.parentElement.childNodes[1]?.textContent?.trim() || 'item';
+    const t = e.touches[0];
+    ghost.textContent = dragging;
+    ghost.style.display = 'block';
+    ghost.style.left = (t.clientX + 12) + 'px';
+    ghost.style.top = (t.clientY - 16) + 'px';
+    addLog('touchstart: ' + dragging);
+  }, { passive: false });
+});
+
+document.addEventListener('touchmove', (e) => {
+  if (!dragging) return;
+  e.preventDefault();
+  const t = e.touches[0];
+  ghost.style.left = (t.clientX + 12) + 'px';
+  ghost.style.top = (t.clientY - 16) + 'px';
+
+  // Hide ghost temporarily to find element underneath
+  ghost.style.display = 'none';
+  const el = document.elementFromPoint(t.clientX, t.clientY);
+  ghost.style.display = 'block';
+
+  const day = el?.closest('[data-day]');
+
+  // Clear all highlights
+  document.querySelectorAll('.day').forEach(d => d.classList.remove('over'));
+
+  if (day) {
+    day.classList.add('over');
+    overDay = day.dataset.day;
+  } else {
+    overDay = null;
+  }
+
+  addLog('move: ' + t.clientX.toFixed(0) + ',' + t.clientY.toFixed(0) + ' over=' + (overDay || 'none') + ' el=' + (el?.tagName || '?') + '.' + (el?.className || ''));
+}, { passive: false });
+
+document.addEventListener('touchend', () => {
+  if (!dragging) return;
+  addLog('DROP: ' + dragging + ' -> ' + (overDay || 'nowhere'));
+  ghost.style.display = 'none';
+  document.querySelectorAll('.day').forEach(d => d.classList.remove('over'));
+  if (overDay) {
+    alert('Dropped "' + dragging + '" on ' + overDay);
+  }
+  dragging = null;
+  overDay = null;
+});
+</script>
+</body>
+</html>

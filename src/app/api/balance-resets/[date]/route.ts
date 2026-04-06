@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { auth } from "@clerk/nextjs/server";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function DELETE(
@@ -6,6 +7,8 @@ export async function DELETE(
   { params }: { params: Promise<{ date: string }> }
 ) {
   const { date } = await params;
-  await prisma.balanceReset.delete({ where: { date } });
+  const { userId: clerkId } = await auth();
+  const userId = clerkId || "default";
+  await prisma.balanceReset.deleteMany({ where: { date, userId } });
   return NextResponse.json({ ok: true });
 }
