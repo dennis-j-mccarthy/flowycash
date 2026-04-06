@@ -35,7 +35,7 @@ export async function GET() {
       return NextResponse.json({
         subscribed: sub.status === "active" || sub.status === "trialing",
         status: sub.status,
-        currentPeriodEnd: sub.current_period_end,
+        currentPeriodEnd: (sub as any).current_period_end,
       });
     }
 

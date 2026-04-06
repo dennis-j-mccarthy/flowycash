@@ -150,7 +150,7 @@ function AuthUI({ headerText, isPro }: { headerText: string; isPro: boolean }) {
         const { url } = await res.json();
         if (url) window.location.href = url;
       }} style={{ fontSize: 10, fontWeight: 700, color: "#fbbf24", background: "rgba(251,191,36,0.15)", padding: "3px 8px", borderRadius: 10, cursor: "pointer" }} title="Manage billing">PRO</span>}
-      <UserButton afterSignOutUrl="/" appearance={{ elements: { avatarBox: { width: 32, height: 32 } } }} />
+      <UserButton  appearance={{ elements: { avatarBox: { width: 32, height: 32 } } }} />
     </div>
   );
   return (
@@ -188,7 +188,7 @@ async function api(url: string, opts?: RequestInit) {
 function buildDemoData(): AppState {
   let id = 0;
   const tx = (name: string, amount: number, type: string, recurrence: string, startDate: string, autopay = false, tags = "") =>
-    ({ id: `demo-${++id}`, name, amount, type, recurrence, startDate, autopay, tags });
+    ({ id: `demo-${++id}`, name, amount, type, recurrence, startDate, autopay, tags, highlight: "", note: "" });
   const now = new Date();
   const y = now.getFullYear();
   const m = now.getMonth();
@@ -339,7 +339,7 @@ export default function BudgetForecast() {
     let ds = { ...demoState, transactions: [...demoState.transactions], overrides: { ...demoState.overrides }, balanceResets: { ...demoState.balanceResets } };
 
     if (url === "/api/transactions" && method === "POST") {
-      ds.transactions.push({ id: `demo-${Date.now()}`, name: body.name, amount: body.amount, type: body.type, recurrence: body.recurrence || "none", startDate: body.startDate, autopay: body.autopay || false, tags: body.tags || "" });
+      ds.transactions.push({ id: `demo-${Date.now()}`, name: body.name, amount: body.amount, type: body.type, recurrence: body.recurrence || "none", startDate: body.startDate, autopay: body.autopay || false, tags: body.tags || "", highlight: body.highlight || "", note: body.note || "" });
     } else if (url.startsWith("/api/transactions/") && method === "PUT") {
       const id = url.split("/").pop()!;
       ds.transactions = ds.transactions.map((t) => t.id === id ? { ...t, ...Object.fromEntries(Object.entries(body).filter(([, v]) => v !== undefined)) } : t);
