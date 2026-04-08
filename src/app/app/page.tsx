@@ -448,8 +448,62 @@ export default function BudgetForecast() {
         txByDate[disp].push({ ...eff, occurrenceDate: odk, displayDate: disp } as DisplayTransaction);
       });
     });
+    // Compute carry-over balance from all prior months
     let bal = state.startingBalance;
     const resets = state.balanceResets || {};
+    const firstOfMonth = dkey(cY, cM, 1);
+    // Walk through all transactions from the beginning up to (but not including) the current month
+    const allTxs = (state.transactions || []);
+    // Find the earliest transaction date to know where to start
+    const sortedDates = new Set<string>();
+    allTxs.forEach((tx) => {
+      // Generate all occurrences before current month
+      const earliest = tx.startDate;
+      if (earliest >= firstOfMonth) return; // starts in or after current month
+      const prevMonthEnd = new Date(cY, cM, 0); // last day of previous month
+      const pmKey = dkey(prevMonthEnd.getFullYear(), prevMonthEnd.getMonth(), prevMonthEnd.getDate());
+      const occs = getOccurrences(tx.startDate, tx.recurrence, tx.startDate, pmKey);
+      occs.forEach((odk) => {
+        const ok = `${tx.id}::${odk}`;
+        const ov = state.overrides[ok] as OverrideData | undefined;
+        if (ov?.deleted) return;
+        const disp = ov?.movedTo || odk;
+        if (disp >= firstOfMonth) return; // moved into current month, skip
+        sortedDates.add(disp);
+        const ovClean = ov ? Object.fromEntries(Object.entries(ov).filter(([, v]) => v != null)) : {};
+        const eff = ov ? { ...tx, ...ovClean } : tx;
+        const amt = (eff.type === "income" ? 1 : -1) * Math.abs(eff.amount ?? tx.amount);
+        // We'll accumulate below
+      });
+    });
+    // Actually simpler: just walk day by day through prior months
+    // Get the earliest possible start
+    const allStarts = allTxs.map((t) => t.startDate).filter(Boolean).sort();
+    const earliestDate = allStarts[0] || firstOfMonth;
+    if (earliestDate < firstOfMonth) {
+      const startD = new Date(parseInt(earliestDate.slice(0,4)), parseInt(earliestDate.slice(5,7))-1, parseInt(earliestDate.slice(8,10)));
+      const endD = new Date(cY, cM, 0); // last day of prev month
+      for (let d = new Date(startD); d <= endD; d.setDate(d.getDate() + 1)) {
+        const dk = dkey(d.getFullYear(), d.getMonth(), d.getDate());
+        if (resets[dk] !== undefined) bal = resets[dk];
+        // Find transactions for this day
+        allTxs.forEach((tx) => {
+          const prevEnd = dkey(endD.getFullYear(), endD.getMonth(), endD.getDate());
+          const occs = getOccurrences(tx.startDate, tx.recurrence, dk, dk);
+          occs.forEach((odk) => {
+            if (odk !== dk) return;
+            const ok = `${tx.id}::${odk}`;
+            const ov = state.overrides[ok] as OverrideData | undefined;
+            if (ov?.deleted) return;
+            const disp = ov?.movedTo || odk;
+            if (disp !== dk) return;
+            const ovClean = ov ? Object.fromEntries(Object.entries(ov).filter(([, v]) => v != null)) : {};
+            const eff = ov ? { ...tx, ...ovClean } : tx;
+            bal += ((eff.type || tx.type) === "income" ? 1 : -1) * Math.abs(eff.amount ?? tx.amount);
+          });
+        });
+      }
+    }
     const result: { date: string; day: number; transactions: DisplayTransaction[]; balance: number; hasReset: boolean }[] = [];
     for (let d = 1; d <= days; d++) {
       const key = dkey(cY, cM, d);
