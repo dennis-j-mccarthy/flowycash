@@ -319,6 +319,7 @@ export default function BudgetForecast() {
   const [zoomWeek, setZoomWeek] = useState<number | null>(null);
   const [zoomDay, setZoomDay] = useState<string | null>(null);
   const [showDashboard, setShowDashboard] = useState(false);
+  const [show3MChart, setShow3MChart] = useState(false);
   const [showMonthNote, setShowMonthNote] = useState(false);
   const [tutorialStep, setTutorialStep] = useState(() => typeof window !== "undefined" && localStorage.getItem("flowycash-tutorial-done") ? -1 : 0);
   const [shareMsg, setShareMsg] = useState("");
@@ -964,6 +965,10 @@ export default function BudgetForecast() {
               style={{ width: 32, height: 32, borderRadius: "50%", border: listening ? `1.5px solid #ef4444` : "1.5px solid rgba(255,255,255,0.3)", background: listening ? "#fee2e2" : "rgba(255,255,255,0.1)", display: "flex", alignItems: "center", justifyContent: "center", animation: listening ? "pulse 1s infinite" : "none" }}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={listening ? "#ef4444" : th.headerText} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
             </button>
+            <button onClick={() => setShow3MChart(true)} className="bf-btn" title="3-Month Trend"
+              style={{ width: 32, height: 32, borderRadius: "50%", border: "1.5px solid rgba(255,255,255,0.3)", background: "rgba(255,255,255,0.1)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={th.headerText} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="3" width="22" height="18" rx="2"/><line x1="8" y1="3" x2="8" y2="21"/><line x1="16" y1="3" x2="16" y2="21"/><polyline points="4 15 8 9 12 13 16 7 20 11"/></svg>
+            </button>
             <button data-tour="dashboard" onClick={() => setShowDashboard(true)} className="bf-btn" title="Dashboard"
               style={{ width: 32, height: 32, borderRadius: "50%", border: "1.5px solid rgba(255,255,255,0.3)", background: "rgba(255,255,255,0.1)", display: "flex", alignItems: "center", justifyContent: "center" }}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={th.headerText} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
@@ -1215,6 +1220,175 @@ export default function BudgetForecast() {
                     Clear
                   </button>
                 )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* 3-Month Chart Modal */}
+      {show3MChart && (() => {
+        // Compute balances for prev month, current month, next month
+        const months = [-1, 0, 1].map((offset) => {
+          let y = cY, m = cM + offset;
+          if (m < 0) { m = 11; y--; } else if (m > 11) { m = 0; y++; }
+          const mStart = dkey(y, m, 1);
+          const mEnd = dkey(y, m, dim(y, m));
+          const mDays = dim(y, m);
+          // Compute starting balance for this month
+          let mBal = state.startingBalance;
+          const mAllTxs = (state.transactions || []);
+          const mResets = state.balanceResets || {};
+          const mAllStarts = mAllTxs.map((t) => t.startDate).filter(Boolean).sort();
+          const mEarliest = mAllStarts[0];
+          if (mEarliest && mEarliest < mStart) {
+            const sD = new Date(parseInt(mEarliest.slice(0,4)), parseInt(mEarliest.slice(5,7))-1, parseInt(mEarliest.slice(8,10)));
+            const eD = new Date(y, m, 0);
+            for (let pY = sD.getFullYear(), pM = sD.getMonth(); pY < y || (pY === y && pM < m); ) {
+              const pStart = dkey(pY, pM, 1);
+              const pEnd = dkey(pY, pM, dim(pY, pM));
+              const pDays = dim(pY, pM);
+              const pTxByDay: Record<string, number> = {};
+              mAllTxs.forEach((tx) => {
+                const occs = getOccurrences(tx.startDate, tx.recurrence, pStart, pEnd);
+                occs.forEach((odk) => {
+                  const ok = `${tx.id}::${odk}`;
+                  const ov = state.overrides[ok] as OverrideData | undefined;
+                  if (ov?.deleted) return;
+                  const disp = ov?.movedTo || odk;
+                  if (disp < pStart || disp > pEnd) return;
+                  const ovClean = ov ? Object.fromEntries(Object.entries(ov).filter(([, v]) => v != null)) : {};
+                  const eff = ov ? { ...tx, ...ovClean } : tx;
+                  const amt = ((eff.type || tx.type) === "income" ? 1 : -1) * Math.abs(eff.amount ?? tx.amount);
+                  pTxByDay[disp] = (pTxByDay[disp] || 0) + amt;
+                });
+              });
+              for (let d = 1; d <= pDays; d++) {
+                const dk = dkey(pY, pM, d);
+                if (mResets[dk] !== undefined) mBal = mResets[dk];
+                if (pTxByDay[dk]) mBal += pTxByDay[dk];
+              }
+              if (pM === 11) { pY++; pM = 0; } else { pM++; }
+            }
+          }
+          // Now compute daily balances for this month
+          const txByDay: Record<string, number> = {};
+          mAllTxs.forEach((tx) => {
+            const occs = getOccurrences(tx.startDate, tx.recurrence, mStart, mEnd);
+            occs.forEach((odk) => {
+              const ok = `${tx.id}::${odk}`;
+              const ov = state.overrides[ok] as OverrideData | undefined;
+              if (ov?.deleted) return;
+              const disp = ov?.movedTo || odk;
+              if (disp < mStart || disp > mEnd) return;
+              const ovClean = ov ? Object.fromEntries(Object.entries(ov).filter(([, v]) => v != null)) : {};
+              const eff = ov ? { ...tx, ...ovClean } : tx;
+              const amt = ((eff.type || tx.type) === "income" ? 1 : -1) * Math.abs(eff.amount ?? tx.amount);
+              txByDay[disp] = (txByDay[disp] || 0) + amt;
+            });
+          });
+          const dailyBals: { date: string; day: number; bal: number }[] = [];
+          let runBal = mBal;
+          for (let d = 1; d <= mDays; d++) {
+            const dk = dkey(y, m, d);
+            if (mResets[dk] !== undefined) runBal = mResets[dk];
+            if (txByDay[dk]) runBal += txByDay[dk];
+            dailyBals.push({ date: dk, day: d, bal: Math.round(runBal * 100) / 100 });
+          }
+          return { y, m, label: MONTHS[m], days: dailyBals };
+        });
+        const allBals = months.flatMap((m) => m.days.map((d) => d.bal));
+        const maxB = Math.max(...allBals, 0);
+        const minB = Math.min(...allBals, 0);
+        const range = maxB - minB || 1;
+        const cw = 900, ch = 200, padL = 55, padT = 10, padB = 30;
+        const chartW = cw - padL;
+        const chartH = ch - padT - padB;
+        const totalDays = months.reduce((s, m) => s + m.days.length, 0);
+        const zeroY = padT + ((maxB - 0) / range) * chartH;
+        let dayIdx = 0;
+        const monthPts = months.map((m) => {
+          const pts = m.days.map((d) => {
+            const x = padL + (dayIdx / (totalDays - 1)) * chartW;
+            const y2 = padT + ((maxB - d.bal) / range) * chartH;
+            dayIdx++;
+            return { x, y: y2, bal: d.bal, day: d.day, date: d.date };
+          });
+          return { ...m, pts };
+        });
+
+        return (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", backdropFilter: "blur(8px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, animation: "panelIn 0.18s ease" }}
+            onClick={() => setShow3MChart(false)}>
+            <div style={{ background: "#fff", borderRadius: 20, width: 720, maxWidth: "95vw", boxShadow: "0 24px 80px rgba(0,0,0,0.2)", overflow: "hidden" }}
+              onClick={(e) => e.stopPropagation()}>
+              <div style={{ background: th.headerBg, padding: "20px 24px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div>
+                  <div style={{ fontSize: 12, color: th.headerText, opacity: 0.7 }}>3-Month Cashflow Trend</div>
+                  <div style={{ fontSize: 20, fontWeight: 800, color: "#fff" }}>{monthPts.map((m) => m.label).join(" → ")}</div>
+                </div>
+                <button onClick={() => setShow3MChart(false)} className="bf-btn" style={{ border: "none", background: "rgba(255,255,255,0.15)", color: "#fff", fontSize: 18, width: 28, height: 28, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
+              </div>
+              <div style={{ padding: "20px 24px" }}>
+                <svg viewBox={`0 0 ${cw} ${ch}`} style={{ width: "100%", height: "auto" }}>
+                  <defs>
+                    <clipPath id="c3above"><rect x={padL} y={0} width={chartW} height={zeroY} /></clipPath>
+                    <clipPath id="c3below"><rect x={padL} y={zeroY} width={chartW} height={ch - zeroY} /></clipPath>
+                  </defs>
+                  {/* Grid lines */}
+                  <line x1={padL} y1={zeroY} x2={cw} y2={zeroY} stroke="#94a3b8" strokeWidth="0.5" />
+                  {/* Y axis labels */}
+                  <text x={padL - 4} y={padT + 4} textAnchor="end" fill="#94a3b8" fontSize="8">{fmtShort(maxB)}</text>
+                  <text x={padL - 4} y={zeroY + 3} textAnchor="end" fill="#94a3b8" fontSize="8">$0</text>
+                  {minB < 0 && <text x={padL - 4} y={ch - padB} textAnchor="end" fill="#ef4444" fontSize="8">{fmtShort(minB)}</text>}
+                  {/* Month dividers */}
+                  {monthPts.slice(1).map((m, i) => {
+                    const x = m.pts[0].x;
+                    return <line key={i} x1={x} y1={padT} x2={x} y2={ch - padB} stroke="#e2e8f0" strokeWidth="1" strokeDasharray="4 4" />;
+                  })}
+                  {/* Month labels */}
+                  {monthPts.map((m) => {
+                    const midX = (m.pts[0].x + m.pts[m.pts.length - 1].x) / 2;
+                    return <text key={m.label} x={midX} y={ch - 8} textAnchor="middle" fill="#64748b" fontSize="10" fontWeight="600">{m.label} {m.y}</text>;
+                  })}
+                  {/* Area + Line */}
+                  {(() => {
+                    const allPts = monthPts.flatMap((m) => m.pts);
+                    const line = allPts.map((p) => `${p.x},${p.y}`).join(" ");
+                    const area = [...allPts.map((p) => `${p.x},${p.y}`), `${allPts[allPts.length-1].x},${zeroY}`, `${allPts[0].x},${zeroY}`].join(" ");
+                    return (<>
+                      <polygon points={area} fill="rgba(16,185,129,0.1)" clipPath="url(#c3above)" />
+                      <polygon points={area} fill="rgba(239,68,68,0.12)" clipPath="url(#c3below)" />
+                      <polyline points={line} fill="none" stroke="#10b981" strokeWidth="1.5" strokeLinejoin="round" clipPath="url(#c3above)" />
+                      <polyline points={line} fill="none" stroke="#ef4444" strokeWidth="1.5" strokeLinejoin="round" clipPath="url(#c3below)" />
+                    </>);
+                  })()}
+                  {/* Negative dots */}
+                  {monthPts.flatMap((m) => m.pts.filter((p) => p.bal < 0).map((p, i) => (
+                    <circle key={`${m.label}-${i}`} cx={p.x} cy={p.y} r="2.5" fill="#ef4444" />
+                  )))}
+                  {/* Y axis line */}
+                  <line x1={padL} y1={padT} x2={padL} y2={ch - padB} stroke="#cbd5e1" strokeWidth="1" />
+                  {/* X axis line */}
+                  <line x1={padL} y1={ch - padB} x2={cw} y2={ch - padB} stroke="#cbd5e1" strokeWidth="1" />
+                </svg>
+                {/* Stats row */}
+                <div style={{ display: "flex", justifyContent: "space-around", marginTop: 16, gap: 12 }}>
+                  {monthPts.map((m) => {
+                    const mBals = m.days.map((d) => d.bal);
+                    const mMin = Math.min(...mBals);
+                    const mEnd = mBals[mBals.length - 1];
+                    const neg = m.days.filter((d) => d.bal < 0).length;
+                    return (
+                      <div key={m.label} style={{ flex: 1, padding: "12px", borderRadius: 10, background: "#f8fafc", textAlign: "center" }}>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: "#1e293b", marginBottom: 6 }}>{m.label}</div>
+                        <div style={{ fontSize: 11, color: "#64748b" }}>End: <strong style={{ color: mEnd < 0 ? C.redDark : C.greenDark }}>{fmt(mEnd)}</strong></div>
+                        <div style={{ fontSize: 11, color: "#64748b" }}>Low: <strong style={{ color: mMin < 0 ? C.redDark : "#64748b" }}>{fmt(mMin)}</strong></div>
+                        {neg > 0 && <div style={{ fontSize: 10, color: C.redDark, marginTop: 2 }}>⚠️ {neg} negative day{neg > 1 ? "s" : ""}</div>}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             </div>
           </div>
