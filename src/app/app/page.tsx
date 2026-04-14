@@ -504,6 +504,7 @@ export default function BudgetForecast() {
         });
       }
     }
+    const carryOver = Math.round(bal * 100) / 100;
     const result: { date: string; day: number; transactions: DisplayTransaction[]; balance: number; hasReset: boolean }[] = [];
     for (let d = 1; d <= days; d++) {
       const key = dkey(cY, cM, d);
@@ -514,10 +515,10 @@ export default function BudgetForecast() {
       });
       result.push({ date: key, day: d, transactions: dayTxs, balance: Math.round(bal * 100) / 100, hasReset: resets[key] !== undefined });
     }
-    return result;
+    return { result, carryOver };
   }, [state, cY, cM, rStart, rEnd]);
 
-  const data = loaded ? dailyData() : [];
+  const { result: data, carryOver } = loaded ? dailyData() : { result: [], carryOver: 0 };
   const dayMap: Record<string, (typeof data)[number]> = {};
   data.forEach((d) => (dayMap[d.date] = d));
 
@@ -2024,6 +2025,12 @@ export default function BudgetForecast() {
                         {di === 0 && <button onClick={(e) => { e.stopPropagation(); setZoomWeek(wi); }} className="bf-btn" title="Week view" style={{ border: "none", background: "none", cursor: "pointer", padding: 1, opacity: 0.4, marginLeft: 2 }}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#64748b" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></button>}
                         {dd?.hasReset && <span style={{ fontSize: 8, fontWeight: 700, background: C.blueDark, color: "#fff", padding: "2px 5px", borderRadius: 4, letterSpacing: "0.04em" }}>RST</span>}
                       </div>
+                      {day === 1 && carryOver !== 0 && (
+                        <div style={{ fontSize: 10, fontWeight: 600, padding: "2px 6px", marginBottom: 2, borderRadius: 4, background: th.totalBg, border: `1px solid ${th.totalBorder}`, color: carryOver < 0 ? C.redDark : C.greenDark, fontVariantNumeric: "tabular-nums", display: "inline-flex", alignItems: "center", gap: 3 }}>
+                          <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+                          {fmt(carryOver)}
+                        </div>
+                      )}
                       <div>
                         {dd?.transactions.map((tx, i) => (
                           <div key={i} className="tx-chip" draggable onDragStart={(e) => onDragStart(e, tx, tx.occurrenceDate)}
