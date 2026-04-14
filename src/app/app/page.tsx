@@ -1679,24 +1679,43 @@ export default function BudgetForecast() {
                     ))}
                   </div>
 
-                  {/* Tag Breakdown */}
+                  {/* Tag Pie Chart */}
                   <div style={{ background: "#f8fafc", borderRadius: 12, padding: "14px 16px" }}>
                     <div style={{ fontSize: 11, fontWeight: 600, color: "#94a3b8", textTransform: "uppercase", marginBottom: 10 }}>Spending by Category</div>
-                    {tagSorted.map(([tag, total], i) => {
-                      const pct = (total / tagTotal) * 100;
-                      const tc = tagColor(tag);
-                      return (
-                        <div key={i} style={{ marginBottom: 6 }}>
-                          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, marginBottom: 2 }}>
-                            <span style={{ color: tc.text, fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}><TagIconSvg tag={tag} size={10} />{tag}</span>
-                            <span style={{ color: "#64748b", fontVariantNumeric: "tabular-nums" }}>{fmt(total)} ({pct.toFixed(0)}%)</span>
-                          </div>
-                          <div style={{ height: 4, borderRadius: 2, background: "#e2e8f0" }}>
-                            <div style={{ height: "100%", borderRadius: 2, background: tc.text, width: `${pct}%` }} />
-                          </div>
-                        </div>
-                      );
-                    })}
+                    <div style={{ display: "flex", gap: 16, alignItems: "center" }}>
+                      <svg viewBox="0 0 140 140" style={{ width: 120, height: 120, flexShrink: 0 }}>
+                        {(() => {
+                          let angle = 0;
+                          return tagSorted.map(([tag, total]) => {
+                            const pct = total / tagTotal;
+                            const startAngle = angle;
+                            angle += pct * 360;
+                            const endAngle = angle;
+                            const sR = (startAngle - 90) * Math.PI / 180;
+                            const eR = (endAngle - 90) * Math.PI / 180;
+                            const la = pct > 0.5 ? 1 : 0;
+                            const cx = 70, cy = 70, r = 65;
+                            const x1 = cx + r * Math.cos(sR), y1 = cy + r * Math.sin(sR);
+                            const x2 = cx + r * Math.cos(eR), y2 = cy + r * Math.sin(eR);
+                            return <path key={tag} d={`M${cx},${cy} L${x1},${y1} A${r},${r} 0 ${la} 1 ${x2},${y2} Z`} fill={tagColor(tag).text} opacity={0.8} />;
+                          });
+                        })()}
+                      </svg>
+                      <div style={{ flex: 1, maxHeight: 200, overflowY: "auto" }}>
+                        {tagSorted.map(([tag, total]) => {
+                          const tc = tagColor(tag);
+                          const pct = ((total / tagTotal) * 100).toFixed(0);
+                          return (
+                            <div key={tag} style={{ display: "flex", alignItems: "center", gap: 6, padding: "3px 0", fontSize: 11 }}>
+                              <div style={{ width: 8, height: 8, borderRadius: 2, background: tc.text, flexShrink: 0 }} />
+                              <span style={{ color: "#1e293b", flex: 1, display: "flex", alignItems: "center", gap: 3 }}><TagIconSvg tag={tag} size={9} />{tag}</span>
+                              <span style={{ fontWeight: 700, color: C.redDark, fontVariantNumeric: "tabular-nums" }}>{fmt(total)}</span>
+                              <span style={{ color: "#94a3b8", fontSize: 9, width: 26, textAlign: "right" }}>{pct}%</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
                   </div>
                 </div>
 
