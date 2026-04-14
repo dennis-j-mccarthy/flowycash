@@ -323,7 +323,7 @@ export default function BudgetForecast() {
   const [showMonthNote, setShowMonthNote] = useState(false);
   const [tutorialStep, setTutorialStep] = useState(() => typeof window !== "undefined" && localStorage.getItem("flowycash-tutorial-done") ? -1 : 0);
   const [shareMsg, setShareMsg] = useState("");
-  const [snapPreview, setSnapPreview] = useState<{ balance: number; date: string; moved: { name: string; from: string; to: string; amount: number }[]; unaccounted: { name: string; amount: number; type: string }[]; imageUrl: string } | null>(null);
+  const [snapPreview, setSnapPreview] = useState<{ balance: number; date: string; moved: { name: string; from: string; to: string; amount: number }[]; unaccounted: { name: string; amount: number; type: string; date: string }[]; imageUrl: string } | null>(null);
   const [listening, setListening] = useState(false);
   const [voiceText, setVoiceText] = useState("");
   const [voiceResult, setVoiceResult] = useState("");
@@ -2112,6 +2112,7 @@ export default function BudgetForecast() {
                       <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "4px 0", fontSize: 13 }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                          <span style={{ color: "#94a3b8", fontSize: 11, flexShrink: 0 }}>{friendlyDate(u.date)}</span>
                           <span style={{ color: "#991b1b", fontWeight: 600 }}>{u.name}</span>
                         </div>
                         <span style={{ fontWeight: 700, color: u.type === "income" ? C.greenDark : C.redDark }}>{u.type === "income" ? "+" : "-"}{fmt(u.amount)}</span>
@@ -2178,7 +2179,7 @@ export default function BudgetForecast() {
 
                   // Find future items that already transpired (before today but scheduled after)
                   const moved: { name: string; from: string; to: string; amount: number }[] = [];
-                  const unaccounted: { name: string; amount: number; type: string }[] = [];
+                  const unaccounted: { name: string; amount: number; type: string; date: string }[] = [];
 
                   // Fake demo data to show the UI
                   const fakeBalance = 3247;
@@ -2187,8 +2188,8 @@ export default function BudgetForecast() {
                     { name: "Netflix", from: "2026-04-30", to: "2026-04-08", amount: 20 },
                   );
                   unaccounted.push(
-                    { name: "ATM Withdrawal", amount: 60, type: "expense" },
-                    { name: "Venmo from Jake", amount: 45, type: "income" },
+                    { name: "ATM Withdrawal", amount: 60, type: "expense", date: "2026-04-07" },
+                    { name: "Venmo from Jake", amount: 45, type: "income", date: "2026-04-09" },
                   );
 
                   setSnapPreview({ balance: fakeBalance, date: todayStr, moved, unaccounted, imageUrl: url });
