@@ -1226,169 +1226,221 @@ export default function BudgetForecast() {
         );
       })()}
 
-      {/* 3-Month Chart Modal */}
+      {/* 90-Day Forecast Chart Modal */}
       {show3MChart && (() => {
-        // Compute balances for prev month, current month, next month
-        const months = [-1, 0, 1].map((offset) => {
-          let y = cY, m = cM + offset;
-          if (m < 0) { m = 11; y--; } else if (m > 11) { m = 0; y++; }
-          const mStart = dkey(y, m, 1);
-          const mEnd = dkey(y, m, dim(y, m));
-          const mDays = dim(y, m);
-          // Compute starting balance for this month
-          let mBal = state.startingBalance;
-          const mAllTxs = (state.transactions || []);
-          const mResets = state.balanceResets || {};
-          const mAllStarts = mAllTxs.map((t) => t.startDate).filter(Boolean).sort();
-          const mEarliest = mAllStarts[0];
-          if (mEarliest && mEarliest < mStart) {
-            const sD = new Date(parseInt(mEarliest.slice(0,4)), parseInt(mEarliest.slice(5,7))-1, parseInt(mEarliest.slice(8,10)));
-            const eD = new Date(y, m, 0);
-            for (let pY = sD.getFullYear(), pM = sD.getMonth(); pY < y || (pY === y && pM < m); ) {
-              const pStart = dkey(pY, pM, 1);
-              const pEnd = dkey(pY, pM, dim(pY, pM));
-              const pDays = dim(pY, pM);
-              const pTxByDay: Record<string, number> = {};
-              mAllTxs.forEach((tx) => {
-                const occs = getOccurrences(tx.startDate, tx.recurrence, pStart, pEnd);
-                occs.forEach((odk) => {
-                  const ok = `${tx.id}::${odk}`;
-                  const ov = state.overrides[ok] as OverrideData | undefined;
-                  if (ov?.deleted) return;
-                  const disp = ov?.movedTo || odk;
-                  if (disp < pStart || disp > pEnd) return;
-                  const ovClean = ov ? Object.fromEntries(Object.entries(ov).filter(([, v]) => v != null)) : {};
-                  const eff = ov ? { ...tx, ...ovClean } : tx;
-                  const amt = ((eff.type || tx.type) === "income" ? 1 : -1) * Math.abs(eff.amount ?? tx.amount);
-                  pTxByDay[disp] = (pTxByDay[disp] || 0) + amt;
-                });
+        // Compute 90 days of daily balances starting from today
+        const today = new Date();
+        const allTxs = (state.transactions || []);
+        const mResets = state.balanceResets || {};
+
+        // First compute today's starting balance by walking from earliest tx
+        let startBal = state.startingBalance;
+        const allStarts = allTxs.map((t) => t.startDate).filter(Boolean).sort();
+        const earliest = allStarts[0];
+        const todayKey2 = dkey(today.getFullYear(), today.getMonth(), today.getDate());
+        if (earliest && earliest < todayKey2) {
+          const sD = new Date(parseInt(earliest.slice(0,4)), parseInt(earliest.slice(5,7))-1, parseInt(earliest.slice(8,10)));
+          for (let cur = new Date(sD); cur < today; cur.setDate(cur.getDate() + 1)) {
+            const dk = dkey(cur.getFullYear(), cur.getMonth(), cur.getDate());
+            if (mResets[dk] !== undefined) startBal = mResets[dk];
+            const mStart = dkey(cur.getFullYear(), cur.getMonth(), 1);
+            const mEnd = dkey(cur.getFullYear(), cur.getMonth(), dim(cur.getFullYear(), cur.getMonth()));
+            allTxs.forEach((tx) => {
+              const occs = getOccurrences(tx.startDate, tx.recurrence, mStart, mEnd);
+              occs.forEach((odk) => {
+                if (odk !== dk) return;
+                const ok = `${tx.id}::${odk}`;
+                const ov = state.overrides[ok] as OverrideData | undefined;
+                if (ov?.deleted) return;
+                const disp = ov?.movedTo || odk;
+                if (disp !== dk) return;
+                const ovClean = ov ? Object.fromEntries(Object.entries(ov).filter(([, v]) => v != null)) : {};
+                const eff = ov ? { ...tx, ...ovClean } : tx;
+                startBal += ((eff.type || tx.type) === "income" ? 1 : -1) * Math.abs(eff.amount ?? tx.amount);
               });
-              for (let d = 1; d <= pDays; d++) {
-                const dk = dkey(pY, pM, d);
-                if (mResets[dk] !== undefined) mBal = mResets[dk];
-                if (pTxByDay[dk]) mBal += pTxByDay[dk];
-              }
-              if (pM === 11) { pY++; pM = 0; } else { pM++; }
-            }
+            });
           }
-          // Now compute daily balances for this month
-          const txByDay: Record<string, number> = {};
-          mAllTxs.forEach((tx) => {
+        }
+
+        // Now generate 90 days from today
+        const days90: { date: string; bal: number; month: number; day: number; monthName: string }[] = [];
+        let bal90 = startBal;
+        for (let i = 0; i < 90; i++) {
+          const d = new Date(today);
+          d.setDate(d.getDate() + i);
+          const dk = dkey(d.getFullYear(), d.getMonth(), d.getDate());
+          if (mResets[dk] !== undefined) bal90 = mResets[dk];
+          const mStart = dkey(d.getFullYear(), d.getMonth(), 1);
+          const mEnd = dkey(d.getFullYear(), d.getMonth(), dim(d.getFullYear(), d.getMonth()));
+          allTxs.forEach((tx) => {
             const occs = getOccurrences(tx.startDate, tx.recurrence, mStart, mEnd);
             occs.forEach((odk) => {
+              if (odk !== dk) return;
               const ok = `${tx.id}::${odk}`;
               const ov = state.overrides[ok] as OverrideData | undefined;
               if (ov?.deleted) return;
               const disp = ov?.movedTo || odk;
-              if (disp < mStart || disp > mEnd) return;
+              if (disp !== dk) return;
               const ovClean = ov ? Object.fromEntries(Object.entries(ov).filter(([, v]) => v != null)) : {};
               const eff = ov ? { ...tx, ...ovClean } : tx;
-              const amt = ((eff.type || tx.type) === "income" ? 1 : -1) * Math.abs(eff.amount ?? tx.amount);
-              txByDay[disp] = (txByDay[disp] || 0) + amt;
+              bal90 += ((eff.type || tx.type) === "income" ? 1 : -1) * Math.abs(eff.amount ?? tx.amount);
             });
           });
-          const dailyBals: { date: string; day: number; bal: number }[] = [];
-          let runBal = mBal;
-          for (let d = 1; d <= mDays; d++) {
-            const dk = dkey(y, m, d);
-            if (mResets[dk] !== undefined) runBal = mResets[dk];
-            if (txByDay[dk]) runBal += txByDay[dk];
-            dailyBals.push({ date: dk, day: d, bal: Math.round(runBal * 100) / 100 });
-          }
-          return { y, m, label: MONTHS[m], days: dailyBals };
-        });
-        const allBals = months.flatMap((m) => m.days.map((d) => d.bal));
+          days90.push({ date: dk, bal: Math.round(bal90 * 100) / 100, month: d.getMonth(), day: d.getDate(), monthName: MONTHS[d.getMonth()] });
+        }
+
+        const allBals = days90.map((d) => d.bal);
         const maxB = Math.max(...allBals, 0);
         const minB = Math.min(...allBals, 0);
         const range = maxB - minB || 1;
-        const cw = 900, ch = 200, padL = 55, padT = 10, padB = 30;
-        const chartW = cw - padL;
-        const chartH = ch - padT - padB;
-        const totalDays = months.reduce((s, m) => s + m.days.length, 0);
+        const negDays90 = days90.filter((d) => d.bal < 0);
+        const lowDay90 = days90.reduce((min, d) => d.bal < min.bal ? d : min, days90[0]);
+        const cw = 900, ch = 220, padL = 55, padT = 10, padB = 30;
+        const chartW = cw - padL, chartH = ch - padT - padB;
         const zeroY = padT + ((maxB - 0) / range) * chartH;
-        let dayIdx = 0;
-        const monthPts = months.map((m) => {
-          const pts = m.days.map((d) => {
-            const x = padL + (dayIdx / (totalDays - 1)) * chartW;
-            const y2 = padT + ((maxB - d.bal) / range) * chartH;
-            dayIdx++;
-            return { x, y: y2, bal: d.bal, day: d.day, date: d.date };
+
+        // Month boundaries
+        const monthBounds: { month: string; startIdx: number }[] = [];
+        let prevMonth = -1;
+        days90.forEach((d, i) => { if (d.month !== prevMonth) { monthBounds.push({ month: d.monthName, startIdx: i }); prevMonth = d.month; } });
+
+        // Tag pie data for the 90 days
+        const tagExp90: Record<string, number> = {};
+        days90.forEach((dd) => {
+          const mStart = dkey(parseInt(dd.date.slice(0,4)), parseInt(dd.date.slice(5,7))-1, 1);
+          const mEnd = dkey(parseInt(dd.date.slice(0,4)), parseInt(dd.date.slice(5,7))-1, dim(parseInt(dd.date.slice(0,4)), parseInt(dd.date.slice(5,7))-1));
+          allTxs.forEach((tx) => {
+            if (tx.type !== "expense") return;
+            const occs = getOccurrences(tx.startDate, tx.recurrence, mStart, mEnd);
+            occs.forEach((odk) => {
+              if (odk !== dd.date) return;
+              const ok = `${tx.id}::${odk}`;
+              const ov = state.overrides[ok] as OverrideData | undefined;
+              if (ov?.deleted) return;
+              const disp = ov?.movedTo || odk;
+              if (disp !== dd.date) return;
+              const tags = ((tx as any).tags || "untagged").split(",").map((s: string) => s.trim()).filter(Boolean);
+              if (!tags.length) tags.push("untagged");
+              const ovClean = ov ? Object.fromEntries(Object.entries(ov).filter(([, v]) => v != null)) : {};
+              const eff = ov ? { ...tx, ...ovClean } : tx;
+              const amt = Math.abs(eff.amount ?? tx.amount);
+              tags.forEach((tag: string) => { tagExp90[tag] = (tagExp90[tag] || 0) + amt; });
+            });
           });
-          return { ...m, pts };
         });
+        const tagSorted90 = Object.entries(tagExp90).sort((a, b) => b[1] - a[1]);
+        const tagTotal90 = tagSorted90.reduce((s, [, v]) => s + v, 0) || 1;
+
+        // Pie chart geometry
+        const pieR = 70, pieCx = 80, pieCy = 80;
+        let pieAngle = 0;
+        const pieSlices = tagSorted90.map(([tag, total]) => {
+          const pct = total / tagTotal90;
+          const startAngle = pieAngle;
+          pieAngle += pct * 360;
+          const endAngle = pieAngle;
+          const startRad = (startAngle - 90) * Math.PI / 180;
+          const endRad = (endAngle - 90) * Math.PI / 180;
+          const largeArc = pct > 0.5 ? 1 : 0;
+          const x1 = pieCx + pieR * Math.cos(startRad);
+          const y1 = pieCy + pieR * Math.sin(startRad);
+          const x2 = pieCx + pieR * Math.cos(endRad);
+          const y2 = pieCy + pieR * Math.sin(endRad);
+          const tc = tagColor(tag);
+          return { tag, total, pct, path: `M${pieCx},${pieCy} L${x1},${y1} A${pieR},${pieR} 0 ${largeArc} 1 ${x2},${y2} Z`, color: tc.text, bg: tc.bg };
+        });
+
+        // Points for chart
+        const pts90 = days90.map((d, i) => ({
+          x: padL + (i / (days90.length - 1)) * chartW,
+          y: padT + ((maxB - d.bal) / range) * chartH,
+          ...d,
+        }));
+        const line90 = pts90.map((p) => `${p.x},${p.y}`).join(" ");
+        const area90 = [...pts90.map((p) => `${p.x},${p.y}`), `${pts90[pts90.length-1].x},${zeroY}`, `${pts90[0].x},${zeroY}`].join(" ");
 
         return (
           <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", backdropFilter: "blur(8px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, animation: "panelIn 0.18s ease" }}
             onClick={() => setShow3MChart(false)}>
-            <div style={{ background: "#fff", borderRadius: 20, width: 720, maxWidth: "95vw", boxShadow: "0 24px 80px rgba(0,0,0,0.2)", overflow: "hidden" }}
+            <div style={{ background: "#fff", borderRadius: 20, width: 800, maxWidth: "95vw", maxHeight: "90vh", overflow: "auto", boxShadow: "0 24px 80px rgba(0,0,0,0.2)" }}
               onClick={(e) => e.stopPropagation()}>
               <div style={{ background: th.headerBg, padding: "20px 24px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <div>
-                  <div style={{ fontSize: 12, color: th.headerText, opacity: 0.7 }}>3-Month Cashflow Trend</div>
-                  <div style={{ fontSize: 20, fontWeight: 800, color: "#fff" }}>{monthPts.map((m) => m.label).join(" → ")}</div>
+                  <div style={{ fontSize: 12, color: th.headerText, opacity: 0.7 }}>90-Day Cashflow Forecast</div>
+                  <div style={{ fontSize: 20, fontWeight: 800, color: "#fff" }}>Today → {days90[89]?.monthName} {days90[89]?.day}</div>
                 </div>
                 <button onClick={() => setShow3MChart(false)} className="bf-btn" style={{ border: "none", background: "rgba(255,255,255,0.15)", color: "#fff", fontSize: 18, width: 28, height: 28, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
               </div>
               <div style={{ padding: "20px 24px" }}>
+                {/* Chart */}
                 <svg viewBox={`0 0 ${cw} ${ch}`} style={{ width: "100%", height: "auto" }}>
                   <defs>
-                    <clipPath id="c3above"><rect x={padL} y={0} width={chartW} height={zeroY} /></clipPath>
-                    <clipPath id="c3below"><rect x={padL} y={zeroY} width={chartW} height={ch - zeroY} /></clipPath>
+                    <clipPath id="c90above"><rect x={padL} y={0} width={chartW} height={zeroY} /></clipPath>
+                    <clipPath id="c90below"><rect x={padL} y={zeroY} width={chartW} height={ch - zeroY} /></clipPath>
                   </defs>
-                  {/* Grid lines */}
                   <line x1={padL} y1={zeroY} x2={cw} y2={zeroY} stroke="#94a3b8" strokeWidth="0.5" />
-                  {/* Y axis labels */}
                   <text x={padL - 4} y={padT + 4} textAnchor="end" fill="#94a3b8" fontSize="8">{fmtShort(maxB)}</text>
                   <text x={padL - 4} y={zeroY + 3} textAnchor="end" fill="#94a3b8" fontSize="8">$0</text>
                   {minB < 0 && <text x={padL - 4} y={ch - padB} textAnchor="end" fill="#ef4444" fontSize="8">{fmtShort(minB)}</text>}
                   {/* Month dividers */}
-                  {monthPts.slice(1).map((m, i) => {
-                    const x = m.pts[0].x;
-                    return <line key={i} x1={x} y1={padT} x2={x} y2={ch - padB} stroke="#e2e8f0" strokeWidth="1" strokeDasharray="4 4" />;
+                  {monthBounds.slice(1).map((mb, i) => {
+                    const x = padL + (mb.startIdx / (days90.length - 1)) * chartW;
+                    return <g key={i}><line x1={x} y1={padT} x2={x} y2={ch - padB} stroke="#e2e8f0" strokeWidth="1" strokeDasharray="4 4" /><text x={x + 4} y={ch - 10} fill="#64748b" fontSize="9" fontWeight="600">{mb.month}</text></g>;
                   })}
-                  {/* Month labels */}
-                  {monthPts.map((m) => {
-                    const midX = (m.pts[0].x + m.pts[m.pts.length - 1].x) / 2;
-                    return <text key={m.label} x={midX} y={ch - 8} textAnchor="middle" fill="#64748b" fontSize="10" fontWeight="600">{m.label} {m.y}</text>;
-                  })}
-                  {/* Area + Line */}
-                  {(() => {
-                    const allPts = monthPts.flatMap((m) => m.pts);
-                    const line = allPts.map((p) => `${p.x},${p.y}`).join(" ");
-                    const area = [...allPts.map((p) => `${p.x},${p.y}`), `${allPts[allPts.length-1].x},${zeroY}`, `${allPts[0].x},${zeroY}`].join(" ");
-                    return (<>
-                      <polygon points={area} fill="rgba(16,185,129,0.1)" clipPath="url(#c3above)" />
-                      <polygon points={area} fill="rgba(239,68,68,0.12)" clipPath="url(#c3below)" />
-                      <polyline points={line} fill="none" stroke="#10b981" strokeWidth="1.5" strokeLinejoin="round" clipPath="url(#c3above)" />
-                      <polyline points={line} fill="none" stroke="#ef4444" strokeWidth="1.5" strokeLinejoin="round" clipPath="url(#c3below)" />
-                    </>);
-                  })()}
-                  {/* Negative dots */}
-                  {monthPts.flatMap((m) => m.pts.filter((p) => p.bal < 0).map((p, i) => (
-                    <circle key={`${m.label}-${i}`} cx={p.x} cy={p.y} r="2.5" fill="#ef4444" />
-                  )))}
-                  {/* Y axis line */}
+                  <text x={padL + 4} y={ch - 10} fill="#64748b" fontSize="9" fontWeight="600">{monthBounds[0]?.month}</text>
+                  <polygon points={area90} fill="rgba(16,185,129,0.1)" clipPath="url(#c90above)" />
+                  <polygon points={area90} fill="rgba(239,68,68,0.12)" clipPath="url(#c90below)" />
+                  <polyline points={line90} fill="none" stroke="#10b981" strokeWidth="1.5" strokeLinejoin="round" clipPath="url(#c90above)" />
+                  <polyline points={line90} fill="none" stroke="#ef4444" strokeWidth="1.5" strokeLinejoin="round" clipPath="url(#c90below)" />
+                  {pts90.filter((p) => p.bal < 0).map((p, i) => <circle key={i} cx={p.x} cy={p.y} r="2" fill="#ef4444" />)}
                   <line x1={padL} y1={padT} x2={padL} y2={ch - padB} stroke="#cbd5e1" strokeWidth="1" />
-                  {/* X axis line */}
                   <line x1={padL} y1={ch - padB} x2={cw} y2={ch - padB} stroke="#cbd5e1" strokeWidth="1" />
                 </svg>
-                {/* Stats row */}
-                <div style={{ display: "flex", justifyContent: "space-around", marginTop: 16, gap: 12 }}>
-                  {monthPts.map((m) => {
-                    const mBals = m.days.map((d) => d.bal);
-                    const mMin = Math.min(...mBals);
-                    const mEnd = mBals[mBals.length - 1];
-                    const neg = m.days.filter((d) => d.bal < 0).length;
-                    return (
-                      <div key={m.label} style={{ flex: 1, padding: "12px", borderRadius: 10, background: "#f8fafc", textAlign: "center" }}>
-                        <div style={{ fontSize: 13, fontWeight: 700, color: "#1e293b", marginBottom: 6 }}>{m.label}</div>
-                        <div style={{ fontSize: 11, color: "#64748b" }}>End: <strong style={{ color: mEnd < 0 ? C.redDark : C.greenDark }}>{fmt(mEnd)}</strong></div>
-                        <div style={{ fontSize: 11, color: "#64748b" }}>Low: <strong style={{ color: mMin < 0 ? C.redDark : "#64748b" }}>{fmt(mMin)}</strong></div>
-                        {neg > 0 && <div style={{ fontSize: 10, color: C.redDark, marginTop: 2 }}>⚠️ {neg} negative day{neg > 1 ? "s" : ""}</div>}
-                      </div>
-                    );
-                  })}
+                {/* Stats */}
+                <div style={{ display: "flex", gap: 12, marginTop: 16 }}>
+                  <div style={{ flex: 1, padding: "12px", borderRadius: 10, background: "#f8fafc", textAlign: "center" }}>
+                    <div style={{ fontSize: 10, color: "#94a3b8", fontWeight: 600, textTransform: "uppercase" }}>Today</div>
+                    <div style={{ fontSize: 18, fontWeight: 800, color: days90[0]?.bal < 0 ? C.redDark : C.greenDark }}>{fmt(days90[0]?.bal || 0)}</div>
+                  </div>
+                  <div style={{ flex: 1, padding: "12px", borderRadius: 10, background: "#f8fafc", textAlign: "center" }}>
+                    <div style={{ fontSize: 10, color: "#94a3b8", fontWeight: 600, textTransform: "uppercase" }}>Lowest</div>
+                    <div style={{ fontSize: 18, fontWeight: 800, color: lowDay90.bal < 0 ? C.redDark : "#64748b" }}>{fmt(lowDay90.bal)}</div>
+                    <div style={{ fontSize: 10, color: "#94a3b8" }}>{lowDay90.monthName} {lowDay90.day}</div>
+                  </div>
+                  <div style={{ flex: 1, padding: "12px", borderRadius: 10, background: "#f8fafc", textAlign: "center" }}>
+                    <div style={{ fontSize: 10, color: "#94a3b8", fontWeight: 600, textTransform: "uppercase" }}>Day 90</div>
+                    <div style={{ fontSize: 18, fontWeight: 800, color: days90[89]?.bal < 0 ? C.redDark : C.greenDark }}>{fmt(days90[89]?.bal || 0)}</div>
+                  </div>
+                  <div style={{ flex: 1, padding: "12px", borderRadius: 10, background: negDays90.length ? "#fff5f5" : "#f0fdf4", textAlign: "center" }}>
+                    <div style={{ fontSize: 10, color: "#94a3b8", fontWeight: 600, textTransform: "uppercase" }}>Negative Days</div>
+                    <div style={{ fontSize: 18, fontWeight: 800, color: negDays90.length ? C.redDark : C.greenDark }}>{negDays90.length}</div>
+                  </div>
                 </div>
+                {/* Tag Pie Chart */}
+                {tagSorted90.length > 0 && (
+                  <div style={{ marginTop: 20 }}>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: "#94a3b8", textTransform: "uppercase", marginBottom: 12 }}>90-Day Spending by Category</div>
+                    <div style={{ display: "flex", gap: 24, alignItems: "center" }}>
+                      <svg viewBox="0 0 160 160" style={{ width: 160, height: 160, flexShrink: 0 }}>
+                        {pieSlices.map((s) => <path key={s.tag} d={s.path} fill={s.color} opacity={0.8} />)}
+                      </svg>
+                      <div style={{ flex: 1 }}>
+                        {tagSorted90.map(([tag, total]) => {
+                          const tc = tagColor(tag);
+                          const pct = ((total / tagTotal90) * 100).toFixed(0);
+                          return (
+                            <div key={tag} style={{ display: "flex", alignItems: "center", gap: 8, padding: "3px 0", fontSize: 12 }}>
+                              <div style={{ width: 10, height: 10, borderRadius: 2, background: tc.text, flexShrink: 0 }} />
+                              <span style={{ color: "#1e293b", flex: 1 }}>{tag}</span>
+                              <span style={{ fontWeight: 700, color: C.redDark, fontVariantNumeric: "tabular-nums" }}>{fmt(total)}</span>
+                              <span style={{ color: "#94a3b8", fontSize: 10, width: 30, textAlign: "right" }}>{pct}%</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
