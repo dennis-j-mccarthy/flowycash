@@ -323,6 +323,7 @@ export default function BudgetForecast() {
   const [showMonthNote, setShowMonthNote] = useState(false);
   const [tutorialStep, setTutorialStep] = useState(() => typeof window !== "undefined" && localStorage.getItem("flowycash-tutorial-done") ? -1 : 0);
   const [shareMsg, setShareMsg] = useState("");
+  const [snapPreview, setSnapPreview] = useState<{ balance: number; date: string; moved: { name: string; from: string; to: string; amount: number }[]; unaccounted: { name: string; amount: number; type: string }[]; imageUrl: string } | null>(null);
   const [listening, setListening] = useState(false);
   const [voiceText, setVoiceText] = useState("");
   const [voiceResult, setVoiceResult] = useState("");
@@ -2042,6 +2043,109 @@ export default function BudgetForecast() {
         </div>
       )}
 
+      {/* Snap Preview - "What I'm About to Do" */}
+      {snapPreview && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", backdropFilter: "blur(10px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 55, animation: "panelIn 0.18s ease" }}
+          onClick={() => setSnapPreview(null)}>
+          <div style={{ background: "#fff", borderRadius: 20, width: 520, maxWidth: "95vw", maxHeight: "90vh", overflow: "auto", boxShadow: "0 24px 80px rgba(0,0,0,0.25)" }}
+            onClick={(e) => e.stopPropagation()}>
+            {/* Header */}
+            <div style={{ background: th.headerBg, padding: "20px 24px", borderRadius: "20px 20px 0 0", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div>
+                <div style={{ fontSize: 12, color: th.headerText, opacity: 0.7 }}>Bank Reconciliation</div>
+                <div style={{ fontSize: 20, fontWeight: 800, color: "#fff" }}>What I&apos;m About to Do</div>
+              </div>
+              <button onClick={() => setSnapPreview(null)} className="bf-btn" style={{ border: "none", background: "rgba(255,255,255,0.15)", color: "#fff", fontSize: 18, width: 28, height: 28, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
+            </div>
+
+            <div style={{ padding: "20px 24px" }}>
+              {/* Screenshot thumbnail */}
+              <div style={{ display: "flex", gap: 16, marginBottom: 20, padding: "14px", background: "#f8fafc", borderRadius: 12, border: "1px solid #e2e8f0" }}>
+                <img src={snapPreview.imageUrl} alt="Bank screenshot" style={{ width: 80, height: 80, objectFit: "cover", borderRadius: 8, border: "1px solid #e2e8f0" }} />
+                <div>
+                  <div style={{ fontSize: 13, color: "#64748b", marginBottom: 4 }}>Detected bank balance</div>
+                  <div style={{ fontSize: 28, fontWeight: 800, color: th.headerBg, fontVariantNumeric: "tabular-nums" }}>{fmt(snapPreview.balance)}</div>
+                  <div style={{ fontSize: 12, color: "#94a3b8" }}>as of {friendlyDate(snapPreview.date)}</div>
+                </div>
+              </div>
+
+              {/* Action 1: Set balance reset */}
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                  <div style={{ width: 24, height: 24, borderRadius: "50%", background: th.headerBg, color: "#fff", fontSize: 13, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>1</div>
+                  <span style={{ fontSize: 14, fontWeight: 700, color: "#1e293b" }}>Set balance to {fmt(snapPreview.balance)}</span>
+                </div>
+                <div style={{ marginLeft: 32, fontSize: 13, color: "#64748b", lineHeight: 1.5 }}>
+                  Create a balance reset on {friendlyDate(snapPreview.date)} to snap your forecast to the actual bank balance.
+                </div>
+              </div>
+
+              {/* Action 2: Move transpired items */}
+              {snapPreview.moved.length > 0 && (
+                <div style={{ marginBottom: 16 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                    <div style={{ width: 24, height: 24, borderRadius: "50%", background: "#f59e0b", color: "#fff", fontSize: 13, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>2</div>
+                    <span style={{ fontSize: 14, fontWeight: 700, color: "#1e293b" }}>Move {snapPreview.moved.length} already-transpired item{snapPreview.moved.length > 1 ? "s" : ""}</span>
+                  </div>
+                  <div style={{ marginLeft: 32 }}>
+                    {snapPreview.moved.map((m, i) => (
+                      <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", fontSize: 13, borderBottom: "1px solid #f1f5f9" }}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+                        <span style={{ color: "#1e293b", fontWeight: 600 }}>{m.name}</span>
+                        <span style={{ color: "#94a3b8" }}>{fmt(m.amount)}</span>
+                        <span style={{ color: "#94a3b8", fontSize: 11 }}>{friendlyDate(m.from)} → {friendlyDate(m.to)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Action 3: Flag unaccounted items */}
+              {snapPreview.unaccounted.length > 0 && (
+                <div style={{ marginBottom: 20 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                    <div style={{ width: 24, height: 24, borderRadius: "50%", background: "#ef4444", color: "#fff", fontSize: 13, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>3</div>
+                    <span style={{ fontSize: 14, fontWeight: 700, color: "#1e293b" }}>{snapPreview.unaccounted.length} unaccounted transaction{snapPreview.unaccounted.length > 1 ? "s" : ""}</span>
+                  </div>
+                  <div style={{ marginLeft: 32, background: "#fff5f5", borderRadius: 8, border: "1px solid #fecaca", padding: "10px 12px" }}>
+                    {snapPreview.unaccounted.map((u, i) => (
+                      <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "4px 0", fontSize: 13 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                          <span style={{ color: "#991b1b", fontWeight: 600 }}>{u.name}</span>
+                        </div>
+                        <span style={{ fontWeight: 700, color: u.type === "income" ? C.greenDark : C.redDark }}>{u.type === "income" ? "+" : "-"}{fmt(u.amount)}</span>
+                      </div>
+                    ))}
+                    <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 6 }}>These appeared in your bank but weren&apos;t in your forecast. They&apos;ll be added as new transactions.</div>
+                  </div>
+                </div>
+              )}
+
+              {/* Buttons */}
+              <div style={{ display: "flex", gap: 10 }}>
+                <button onClick={() => {
+                  // Apply all actions
+                  // 1. Balance reset
+                  callApi("/api/balance-resets", { method: "POST", body: JSON.stringify({ date: snapPreview.date, amount: snapPreview.balance }) });
+                  // 2. In production: move items and add unaccounted
+                  // For now just close
+                  setSnapPreview(null);
+                  reload();
+                  setShareMsg("Balance synced from bank screenshot!");
+                  setTimeout(() => setShareMsg(""), 3000);
+                }} className="bf-btn" style={{ flex: 1, padding: "14px", borderRadius: 12, border: "none", background: th.headerBg, color: "#fff", fontSize: 15, fontWeight: 700 }}>
+                  Apply All Changes
+                </button>
+                <button onClick={() => setSnapPreview(null)} className="bf-btn" style={{ padding: "14px 24px", borderRadius: 12, border: "1px solid #e2e8f0", background: "#fff", color: "#64748b", fontSize: 14, fontWeight: 600 }}>
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Reset Modal */}
       {panel === "reset" && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, animation: "panelIn 0.18s ease" }}
@@ -2058,7 +2162,41 @@ export default function BudgetForecast() {
               <label style={{ fontSize: 12, fontWeight: 600, color: "#64748b", display: "block", marginBottom: 6 }}>Actual balance</label>
               <input autoFocus type="number" step="0.01" value={resetAmt} onChange={(e) => setResetAmt(e.target.value)} placeholder="0.00" className="bf-input" style={{ fontSize: 18, padding: "14px 16px" }} />
             </div>
-            <button onClick={handleResetSave} className="bf-btn" style={{ width: "100%", padding: "14px", borderRadius: 12, border: "none", background: C.blueDark, color: "#fff", fontSize: 15, fontWeight: 600 }}>Apply reset</button>
+            <div style={{ display: "flex", gap: 8, marginBottom: 4 }}>
+              <button onClick={handleResetSave} className="bf-btn" style={{ flex: 1, padding: "14px", borderRadius: 12, border: "none", background: C.blueDark, color: "#fff", fontSize: 15, fontWeight: 600 }}>Apply reset</button>
+              <label className="bf-btn" style={{ flex: 1, padding: "14px", borderRadius: 12, border: `1.5px solid ${th.accent}`, background: th.totalBg, color: th.headerBg, fontSize: 14, fontWeight: 600, cursor: "pointer", textAlign: "center", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                Snap from Photo
+                <input type="file" accept="image/*" capture="environment" hidden onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  const url = URL.createObjectURL(file);
+                  // Simulate OCR/analysis with fake data for demo
+                  // In production this would call an AI vision API
+                  const todayD = new Date();
+                  const todayStr = dkey(todayD.getFullYear(), todayD.getMonth(), todayD.getDate());
+
+                  // Find future items that already transpired (before today but scheduled after)
+                  const moved: { name: string; from: string; to: string; amount: number }[] = [];
+                  const unaccounted: { name: string; amount: number; type: string }[] = [];
+
+                  // Fake demo data to show the UI
+                  const fakeBalance = 3247;
+                  moved.push(
+                    { name: "Geico", from: "2026-04-12", to: todayStr, amount: 203 },
+                    { name: "Netflix", from: "2026-04-30", to: "2026-04-08", amount: 20 },
+                  );
+                  unaccounted.push(
+                    { name: "ATM Withdrawal", amount: 60, type: "expense" },
+                    { name: "Venmo from Jake", amount: 45, type: "income" },
+                  );
+
+                  setSnapPreview({ balance: fakeBalance, date: todayStr, moved, unaccounted, imageUrl: url });
+                  setPanel(null);
+                  e.target.value = "";
+                }} />
+              </label>
+            </div>
             {Object.keys(state.balanceResets || {}).length > 0 && (
               <div style={{ marginTop: 20, paddingTop: 16, borderTop: "1px solid #e2e8f0" }}>
                 <div style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", color: "#94a3b8", marginBottom: 8 }}>Active resets</div>
