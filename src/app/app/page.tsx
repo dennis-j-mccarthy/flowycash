@@ -2531,7 +2531,7 @@ export default function BudgetForecast() {
       )}
 
       {/* Footer */}
-      <div data-tour="footer" style={{ flexShrink: 0, display: "flex", justifyContent: "space-between", alignItems: "center", padding: "4px 0" }}>
+      <div data-tour="footer" style={{ flexShrink: 0, display: "flex", justifyContent: "space-between", alignItems: "flex-end", padding: "4px 0" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 2, background: "#f1f5f9", borderRadius: 8, padding: 2 }}>
           <button onClick={() => setFontSize((s) => Math.max(8, s - 1))} className="bf-btn" style={{ width: 24, height: 24, borderRadius: 6, border: "none", background: "transparent", fontSize: 13, color: "#64748b", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700 }}>−</button>
           <span style={{ fontSize: 10, color: "#94a3b8", fontWeight: 600, minWidth: 14, textAlign: "center" }}>A</span>
@@ -2690,6 +2690,9 @@ export default function BudgetForecast() {
       <div ref={ghostRef} style={{ display: "none", position: "fixed", pointerEvents: "none", zIndex: 100,
         background: "#fff", borderRadius: 8, padding: "6px 12px", boxShadow: "0 4px 16px rgba(0,0,0,0.2)", border: "1.5px solid #3b82f6",
         fontSize: 13, fontWeight: 600, color: "#1e293b", whiteSpace: "nowrap" }} />
+
+      {/* Fixed logo bottom-left */}
+      <img src="/logo.png" alt="flowycash" style={{ position: "fixed", bottom: 8, left: 16, height: 120, opacity: 0.3, pointerEvents: "none", zIndex: 1 }} />
     </div>
   );
 }
