@@ -945,7 +945,7 @@ export default function BudgetForecast() {
       {/* Header */}
       <div style={{ flexShrink: 0, background: th.headerBg, borderRadius: 14, padding: "12px 20px", marginBottom: 10 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <img data-tour="logo" src="/logo-white.png" alt="flowycash.com" style={{ height: 44, cursor: "pointer" }} onClick={() => { setCM(new Date().getMonth()); setCY(new Date().getFullYear()); setZoomWeek(null); }} />
+          <span data-tour="logo" style={{ cursor: "pointer", fontSize: 16, fontWeight: 700, color: "#fff", letterSpacing: "-0.02em" }} onClick={() => { setCM(new Date().getMonth()); setCY(new Date().getFullYear()); setZoomWeek(null); }}>flowycash</span>
           <button onClick={prevM} className="bf-btn" style={{ width: 28, height: 28, borderRadius: "50%", border: "none", background: "rgba(255,255,255,0.15)", fontSize: 16, color: th.headerText, display: "flex", alignItems: "center", justifyContent: "center" }}>‹</button>
           <span data-tour="month" onClick={() => { const mk = `${cY}-${String(cM + 1).padStart(2, "0")}`; setMonthNoteText((state.monthNotes || {})[mk] || ""); setShowMonthNote(true); }}
             style={{ fontSize: 22, fontWeight: 700, color: "#fff", letterSpacing: "-0.03em", lineHeight: 1, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
