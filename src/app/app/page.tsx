@@ -130,11 +130,17 @@ const RECUR = [
   { v: "yearly", l: "Yearly" },
 ];
 
-function AuthUI({ headerText, isPro }: { headerText: string; isPro: boolean }) {
+function AuthUI({ headerText, isPro, onShare }: { headerText: string; isPro: boolean; onShare: () => void }) {
   const { isSignedIn, isLoaded } = useAuth();
   if (!isLoaded) return null;
   if (isSignedIn) return (
     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+      {isPro && (
+        <button onClick={onShare} className="bf-btn" title="Share with partner"
+          style={{ width: 32, height: 32, borderRadius: "50%", border: "1.5px solid rgba(255,255,255,0.3)", background: "rgba(255,255,255,0.1)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={headerText} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg>
+        </button>
+      )}
       {!isPro && (
         <button onClick={async () => {
           const res = await fetch("/api/stripe/checkout", { method: "POST" });
@@ -323,6 +329,9 @@ export default function BudgetForecast() {
   const [showMonthNote, setShowMonthNote] = useState(false);
   const [tutorialStep, setTutorialStep] = useState(() => typeof window !== "undefined" && localStorage.getItem("flowycash-tutorial-done") ? -1 : 0);
   const [shareMsg, setShareMsg] = useState("");
+  const [showShare, setShowShare] = useState(false);
+  const [shareEmail, setShareEmail] = useState("");
+  const [sharedWith, setSharedWith] = useState<{ email: string }[]>([]);
   const [snapPreview, setSnapPreview] = useState<{ balance: number; date: string; moved: { name: string; from: string; to: string; amount: number }[]; unaccounted: { name: string; amount: number; type: string; date: string }[]; imageUrl: string } | null>(null);
   const [listening, setListening] = useState(false);
   const [voiceText, setVoiceText] = useState("");
@@ -975,7 +984,10 @@ export default function BudgetForecast() {
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={th.headerText} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
             </button>
             <div style={{ width: 1, height: 20, background: "rgba(255,255,255,0.2)", margin: "0 8px" }} />
-            <AuthUI headerText={th.headerText} isPro={isPro} />
+            <AuthUI headerText={th.headerText} isPro={isPro} onShare={() => {
+              fetch("/api/share").then((r) => r.json()).then((d) => setSharedWith(Array.isArray(d) ? d.map((s: any) => ({ email: s.sharedEmail })) : []));
+              setShowShare(true);
+            }} />
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           {(() => {
@@ -2577,6 +2589,60 @@ export default function BudgetForecast() {
           )}
         </div>
       </div>
+
+      {/* Share Modal */}
+      {showShare && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, animation: "panelIn 0.18s ease" }}
+          onClick={() => setShowShare(false)}>
+          <div style={{ background: "#fff", borderRadius: 20, padding: "28px 28px 24px", width: 420, maxWidth: "90vw", boxShadow: "0 20px 60px rgba(0,0,0,0.15)" }}
+            onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+              <span style={{ fontSize: 18, fontWeight: 700, letterSpacing: "-0.02em", display: "flex", alignItems: "center", gap: 8 }}>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={th.headerBg} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg>
+                Share with Partner
+              </span>
+              <button onClick={() => setShowShare(false)} className="bf-btn" style={{ border: "none", background: "none", fontSize: 22, color: "#94a3b8", cursor: "pointer" }}>×</button>
+            </div>
+            <p style={{ fontSize: 13, color: "#64748b", marginBottom: 20, lineHeight: 1.5 }}>
+              Invite someone to see your cashflow calendar. They sign up with this email and automatically see your data.
+            </p>
+            <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+              <input value={shareEmail} onChange={(e) => setShareEmail(e.target.value)} placeholder="partner@email.com" className="bf-input" style={{ fontSize: 14, padding: "10px 14px", flex: 1 }}
+                onKeyDown={(e) => { if (e.key === "Enter" && shareEmail.trim()) {
+                  fetch("/api/share", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: shareEmail }) })
+                    .then(() => { setSharedWith((prev) => [...prev, { email: shareEmail.toLowerCase().trim() }]); setShareEmail(""); });
+                }}} />
+              <button onClick={() => {
+                if (!shareEmail.trim()) return;
+                fetch("/api/share", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: shareEmail }) })
+                  .then(() => { setSharedWith((prev) => [...prev, { email: shareEmail.toLowerCase().trim() }]); setShareEmail(""); });
+              }} className="bf-btn" style={{ padding: "10px 20px", borderRadius: 10, border: "none", background: th.headerBg, color: "#fff", fontSize: 13, fontWeight: 600 }}>
+                Invite
+              </button>
+            </div>
+            {sharedWith.length > 0 && (
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", color: "#94a3b8", marginBottom: 8 }}>Shared with</div>
+                {sharedWith.map((s) => (
+                  <div key={s.email} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: "1px solid #f1f5f9", fontSize: 13 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#64748b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                      <span style={{ color: "#1e293b" }}>{s.email}</span>
+                    </div>
+                    <button onClick={() => {
+                      fetch("/api/share", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: s.email }) })
+                        .then(() => setSharedWith((prev) => prev.filter((x) => x.email !== s.email)));
+                    }} className="bf-btn" style={{ border: "none", background: "none", color: C.redDark, fontSize: 12, fontWeight: 500, cursor: "pointer" }}>Remove</button>
+                  </div>
+                ))}
+              </div>
+            )}
+            {sharedWith.length === 0 && (
+              <div style={{ textAlign: "center", padding: "16px 0", color: "#94a3b8", fontSize: 13 }}>No one yet — invite your partner above</div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Tutorial */}
       {tutorialStep >= 0 && (() => {

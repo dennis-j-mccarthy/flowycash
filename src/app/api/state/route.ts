@@ -1,15 +1,27 @@
 import { prisma } from "@/lib/prisma";
-import { auth } from "@clerk/nextjs/server";
+import { auth, currentUser } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 
 export async function GET() {
   try {
     const { userId: clerkId } = await auth();
-    // Use clerk userId if signed in, otherwise "default"
-    const userId = clerkId || "default";
+    let userId = clerkId || "default";
+
+    // Check if this user has shared access to someone else's data
+    if (clerkId) {
+      const user = await currentUser();
+      const email = user?.emailAddresses?.[0]?.emailAddress?.toLowerCase();
+      if (email) {
+        const sharedAccess = await prisma.sharedAccess.findFirst({ where: { sharedEmail: email } });
+        if (sharedAccess) {
+          // Use the owner's data instead
+          userId = sharedAccess.ownerUserId;
+        }
+      }
+    }
 
     // If signed in user has no data, check if "default" data exists and claim it
-    if (clerkId) {
+    if (clerkId && userId === clerkId) {
       const userTxCount = await prisma.transaction.count({ where: { userId } });
       if (userTxCount === 0) {
         const defaultTxCount = await prisma.transaction.count({ where: { userId: "default" } });

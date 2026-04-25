@@ -60,6 +60,16 @@ model Settings {
   @@unique([userId])
 }
 
+model SharedAccess {
+  id          String @id @default(cuid())
+  ownerUserId String // the user who owns the data
+  sharedEmail String // email of the person who can view
+  createdAt   DateTime @default(now())
+
+  @@unique([ownerUserId, sharedEmail])
+  @@index([sharedEmail])
+}
+
 model MonthNote {
   id     String @id @default(cuid())
   userId String @default("default")
