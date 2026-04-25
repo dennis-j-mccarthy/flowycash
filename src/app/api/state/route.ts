@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { auth, currentUser } from "@clerk/nextjs/server";
+import { auth, clerkClient } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 
 export async function GET() {
@@ -8,15 +8,22 @@ export async function GET() {
     let userId = clerkId || "default";
 
     // Check if this user has shared access to someone else's data
+    // Only check for users who have no transactions of their own
     if (clerkId) {
-      const user = await currentUser();
-      const email = user?.emailAddresses?.[0]?.emailAddress?.toLowerCase();
-      if (email) {
-        const sharedAccess = await prisma.sharedAccess.findFirst({ where: { sharedEmail: email } });
-        if (sharedAccess) {
-          // Use the owner's data instead
-          userId = sharedAccess.ownerUserId;
-        }
+      const ownTxCount = await prisma.transaction.count({ where: { userId: clerkId } });
+      if (ownTxCount === 0) {
+        // Look up user's email from Clerk to check shared access
+        try {
+          const client = await clerkClient();
+          const user = await client.users.getUser(clerkId);
+          const email = user?.emailAddresses?.[0]?.emailAddress?.toLowerCase();
+          if (email) {
+            const sharedAccess = await prisma.sharedAccess.findFirst({ where: { sharedEmail: email } });
+            if (sharedAccess) {
+              userId = sharedAccess.ownerUserId;
+            }
+          }
+        } catch { /* ignore clerk errors */ }
       }
     }
 
