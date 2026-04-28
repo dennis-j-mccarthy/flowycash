@@ -930,6 +930,7 @@ export default function BudgetForecast() {
     .cal-cell { transition: background 0.1s; }
     .cal-cell:hover { background: #f8fafc !important; }
     .cal-cell:hover .cell-plus { opacity: 1 !important; }
+    .cell-addbtn:hover { transform: scale(1.4); background: currentColor; color: #fff !important; }
     .tx-chip { transition: all 0.1s; cursor: grab; }
     .tx-chip:hover { background: #eef2ff !important; outline: 1.5px solid #818cf8; outline-offset: -1px; border-radius: 5px; }
     .list-row { transition: all 0.1s; }
@@ -2384,7 +2385,7 @@ export default function BudgetForecast() {
                   if (!day) {
                     const isLogoCell = `${wi}-${di}` === lastEmptyKey;
                     return (
-                      <div key={`${wi}-${di}`} style={{ minHeight: 0, background: th.calBg, borderTop: `1px solid ${th.gridBorder}`, borderRight: di < 6 ? `1px solid ${th.gridBorder}` : "none", display: "flex", alignItems: "center", justifyContent: "center", padding: 8, opacity: 0.5 }}>
+                      <div key={`${wi}-${di}`} style={{ minHeight: 0, background: th.calBg, borderTop: `1px solid ${th.gridBorder}`, borderRight: di < 6 ? `1px solid ${th.gridBorder}` : "none", display: "flex", alignItems: "center", justifyContent: "center", padding: 8 }}>
                         {isLogoCell && <img src="/logo.png" alt="" style={{ maxWidth: "90%", maxHeight: "80%", objectFit: "contain" }} />}
                       </div>
                     );
@@ -2419,8 +2420,8 @@ export default function BudgetForecast() {
                         )}
                         <div style={{ display: "flex", alignItems: "center", gap: 2, marginLeft: "auto" }}>
                           {di === 0 && <span onClick={(e) => { e.stopPropagation(); setZoomWeek(wi); }} className="cell-plus" title="Week view" style={{ cursor: "pointer", opacity: 0, display: "flex", alignItems: "center" }}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></span>}
-                          <span onClick={(e) => { e.stopPropagation(); setEditTx(null); setEditDate(null); setForm({ name: "", amount: "", type: "expense", recurrence: "none", date: key, autopay: false, tags: "", highlight: "", note: "" }); setTagInput(""); openPanel("tx"); }} className="cell-plus" title="Add expense" style={{ width: 16, height: 16, borderRadius: 4, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", fontSize: 14, fontWeight: 700, color: C.redDark, lineHeight: 1, opacity: 0 }}>−</span>
-                          <span onClick={(e) => { e.stopPropagation(); setEditTx(null); setEditDate(null); setForm({ name: "", amount: "", type: "income", recurrence: "none", date: key, autopay: false, tags: "", highlight: "", note: "" }); setTagInput(""); openPanel("tx"); }} className="cell-plus" title="Add income" style={{ width: 16, height: 16, borderRadius: 4, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", fontSize: 14, fontWeight: 700, color: C.greenDark, lineHeight: 1, opacity: 0 }}>+</span>
+                          <span onClick={(e) => { e.stopPropagation(); setEditTx(null); setEditDate(null); setForm({ name: "", amount: "", type: "expense", recurrence: "none", date: key, autopay: false, tags: "", highlight: "", note: "" }); setTagInput(""); openPanel("tx"); }} className="cell-plus cell-addbtn" title="Add expense" style={{ width: 18, height: 18, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", fontSize: 13, fontWeight: 800, color: C.redDark, lineHeight: 1, opacity: 0, transition: "all 0.12s" }}>−</span>
+                          <span onClick={(e) => { e.stopPropagation(); setEditTx(null); setEditDate(null); setForm({ name: "", amount: "", type: "income", recurrence: "none", date: key, autopay: false, tags: "", highlight: "", note: "" }); setTagInput(""); openPanel("tx"); }} className="cell-plus cell-addbtn" title="Add income" style={{ width: 18, height: 18, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", fontSize: 13, fontWeight: 800, color: C.greenDark, lineHeight: 1, opacity: 0, transition: "all 0.12s" }}>+</span>
                         </div>
                       </div>
                       {day === 1 && carryOver !== 0 && (
@@ -2433,7 +2434,7 @@ export default function BudgetForecast() {
                         {dd?.transactions.map((tx, i) => (
                           <div key={i} className="tx-chip" draggable onDragStart={(e) => onDragStart(e, tx, tx.occurrenceDate)}
                             onClick={(e) => { e.stopPropagation(); openEdit(tx, tx.occurrenceDate); }}
-                            style={{ fontSize: 11, fontWeight: 600, padding: "1px 6px", marginTop: 1, borderRadius: 5, lineHeight: 1.3,
+                            style={{ fontSize, fontWeight: 600, padding: "1px 6px", marginTop: 1, borderRadius: 5, lineHeight: 1.3,
                               background: (tx as any).highlight ? hlColor((tx as any).highlight).bg : "transparent",
                               borderLeft: (tx as any).highlight ? `3px solid ${hlColor((tx as any).highlight).border}` : "none",
                               color: th.itemText,
@@ -2447,7 +2448,7 @@ export default function BudgetForecast() {
                               <span key={ti} style={{ fontSize: fontSize - 2, padding: "1px 4px", borderRadius: 4, background: tagColor(tag.trim()).bg, color: tagColor(tag.trim()).text, flexShrink: 0, whiteSpace: "nowrap", fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 2 }}><TagIconSvg tag={tag.trim()} size={fontSize - 3} />{tag.trim()}</span>
                             ))}
                             {(tx as any).autopay && <svg width="8" height="10" viewBox="0 0 8 10" style={{ marginLeft: "auto", flexShrink: 0, opacity: 0.6 }}><path d="M4.5 0L0 6h3.5L3 10l5-6H4.5z" fill="#f59e0b"/></svg>}
-                            <span style={{ marginLeft: (tx as any).autopay ? 2 : "auto", flexShrink: 0, fontVariantNumeric: "tabular-nums", fontSize: 11, fontWeight: 600, color: tx.type === "income" ? C.greenDark : C.redDark }}>{fmtShort(Math.abs(tx.amount)).replace("$", "")}</span>
+                            <span style={{ marginLeft: (tx as any).autopay ? 2 : "auto", flexShrink: 0, fontVariantNumeric: "tabular-nums", fontSize, fontWeight: 600, color: tx.type === "income" ? C.greenDark : C.redDark }}>{fmtShort(Math.abs(tx.amount)).replace("$", "")}</span>
                           </div>
                         ))}
                       </div>
