@@ -2404,7 +2404,6 @@ export default function BudgetForecast() {
                           <span onClick={(e) => { e.stopPropagation(); setZoomDay(key); }} className="day-num" style={{ fontSize: 14, fontWeight: 700, color: "#1e293b", lineHeight: "22px", cursor: "pointer", position: "relative" }}>{day}<svg className="day-mag" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ position: "absolute", right: -12, top: 2, display: "none" }}><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></span>
                         )}
                         {di === 0 && <button onClick={(e) => { e.stopPropagation(); setZoomWeek(wi); }} className="bf-btn" title="Week view" style={{ border: "none", background: "none", cursor: "pointer", padding: 1, opacity: 0.4, marginLeft: 2 }}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#64748b" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></button>}
-                        {dd?.hasReset && <span style={{ fontSize: 8, fontWeight: 700, background: C.blueDark, color: "#fff", padding: "2px 5px", borderRadius: 4, letterSpacing: "0.04em" }}>RST</span>}
                         <span onClick={(e) => { e.stopPropagation(); openAdd(key); }} className="cell-plus" style={{ marginLeft: "auto", width: 16, height: 16, borderRadius: 4, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", fontSize: 14, color: "#94a3b8", lineHeight: 1, opacity: 0 }}>+</span>
                       </div>
                       {day === 1 && carryOver !== 0 && (
@@ -2431,7 +2430,7 @@ export default function BudgetForecast() {
                               <span key={ti} style={{ fontSize: fontSize - 2, padding: "1px 4px", borderRadius: 4, background: tagColor(tag.trim()).bg, color: tagColor(tag.trim()).text, flexShrink: 0, whiteSpace: "nowrap", fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 2 }}><TagIconSvg tag={tag.trim()} size={fontSize - 3} />{tag.trim()}</span>
                             ))}
                             {(tx as any).autopay && <svg width="8" height="10" viewBox="0 0 8 10" style={{ marginLeft: "auto", flexShrink: 0, opacity: 0.6 }}><path d="M4.5 0L0 6h3.5L3 10l5-6H4.5z" fill="#f59e0b"/></svg>}
-                            <span style={{ marginLeft: (tx as any).autopay ? 2 : "auto", flexShrink: 0, fontVariantNumeric: "tabular-nums", fontSize: fontSize - 1, color: tx.type === "income" ? C.greenDark : C.redDark }}>{fmtShort(Math.abs(tx.amount)).replace("$", "")}</span>
+                            <span style={{ marginLeft: (tx as any).autopay ? 2 : "auto", flexShrink: 0, fontVariantNumeric: "tabular-nums", fontSize: 11, fontWeight: 600, color: tx.type === "income" ? C.greenDark : C.redDark }}>{fmtShort(Math.abs(tx.amount)).replace("$", "")}</span>
                           </div>
                         ))}
                       </div>
@@ -2439,7 +2438,8 @@ export default function BudgetForecast() {
                     <div onClick={(e) => { e.stopPropagation(); setResetDt(key); setResetAmt(""); openPanel("reset"); }}
                       style={{ flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 4, padding: "4px 6px", background: th.totalBg, borderTop: `1px solid ${th.totalBorder}`, cursor: "pointer" }}
                       title="Click to set balance reset">
-                      {dd && dd.balance < 0 && <span onClick={(e) => { e.stopPropagation(); setAdviceDay(key); }} style={{ cursor: "pointer", marginRight: "auto", flexShrink: 0, display: "flex", alignItems: "center" }} title="Get advice"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z"/></svg></span>}
+                      {dd?.hasReset && <span style={{ fontSize: 7, fontWeight: 700, background: C.blueDark, color: "#fff", padding: "1px 4px", borderRadius: 3, letterSpacing: "0.04em", marginRight: "auto" }}>RST</span>}
+                      {dd && dd.balance < 0 && <span onClick={(e) => { e.stopPropagation(); setAdviceDay(key); }} style={{ cursor: "pointer", marginRight: dd?.hasReset ? 0 : "auto", flexShrink: 0, display: "flex", alignItems: "center" }} title="Get advice"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z"/></svg></span>}
                       {dd && dd.balance < 0 && <span style={{ fontSize: 16 }}>😢</span>}
                       {dd && <span style={{ fontSize: 13, fontWeight: 700, fontVariantNumeric: "tabular-nums", letterSpacing: "-0.02em", color: dd.balance < 0 ? C.redDark : C.greenDark }}>{fmtShort(dd.balance)}</span>}
                     </div>
