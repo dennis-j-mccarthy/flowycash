@@ -2375,28 +2375,20 @@ export default function BudgetForecast() {
             {DAYS.map((d, i) => (
               <div key={i} style={{ padding: "10px 4px", fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", color: th.dayBarText, textAlign: "center", background: th.dayBarBg, borderBottom: `1px solid ${th.dayBarBorder}`, display: "flex", alignItems: "center", justifyContent: "center" }}>{d}</div>
             ))}
-            {weeks.map((wk, wi) =>
-              wk.map((day, di) => {
-                if (!day)
-                  return (
-                    {(() => {
-                      // Show logo only once: prefer last empty cell (bottom-right), else first empty cell (top-left)
-                      const isLastRow = wi === weeks.length - 1;
-                      const isFirstRow = wi === 0;
-                      const lastEmptyInRow = isLastRow && di === 6;
-                      const firstEmptyInRow = isFirstRow && di === 0;
-                      // Find if this is the LAST empty cell overall
-                      const allEmpty: string[] = [];
-                      weeks.forEach((w, wIdx) => w.forEach((d, dIdx) => { if (!d) allEmpty.push(`${wIdx}-${dIdx}`); }));
-                      const lastEmpty = allEmpty[allEmpty.length - 1];
-                      const showLogo = `${wi}-${di}` === lastEmpty;
-                      return (
-                        <div key={`${wi}-${di}`} style={{ minHeight: 0, background: th.calBg, borderTop: `1px solid ${th.gridBorder}`, borderRight: di < 6 ? `1px solid ${th.gridBorder}` : "none", display: "flex", alignItems: "center", justifyContent: "center", padding: 8, opacity: 0.5 }}>
-                          {showLogo && <img src="/logo.png" alt="" style={{ maxWidth: "90%", maxHeight: "80%", objectFit: "contain" }} />}
-                        </div>
-                      );
-                    })()}
-                  );
+            {/* Find last empty cell for logo placement */}
+            {(() => {
+              let lastEmptyKey = "";
+              weeks.forEach((w, wIdx) => w.forEach((d, dIdx) => { if (!d) lastEmptyKey = `${wIdx}-${dIdx}`; }));
+              return weeks.map((wk, wi) =>
+                wk.map((day, di) => {
+                  if (!day) {
+                    const isLogoCell = `${wi}-${di}` === lastEmptyKey;
+                    return (
+                      <div key={`${wi}-${di}`} style={{ minHeight: 0, background: th.calBg, borderTop: `1px solid ${th.gridBorder}`, borderRight: di < 6 ? `1px solid ${th.gridBorder}` : "none", display: "flex", alignItems: "center", justifyContent: "center", padding: 8, opacity: 0.5 }}>
+                        {isLogoCell && <img src="/logo.png" alt="" style={{ maxWidth: "90%", maxHeight: "80%", objectFit: "contain" }} />}
+                      </div>
+                    );
+                  }
                 const key = dkey(cY, cM, day);
                 const dd = dayMap[key];
                 const isToday = key === todayKey;
@@ -2471,7 +2463,8 @@ export default function BudgetForecast() {
                   </div>
                 );
               })
-            )}
+              );
+            })()}
           </div>
           {selDay && (
             <div style={{ marginTop: 10, display: "flex", justifyContent: "flex-end" }}>
