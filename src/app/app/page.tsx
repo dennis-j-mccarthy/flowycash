@@ -2379,9 +2379,23 @@ export default function BudgetForecast() {
               wk.map((day, di) => {
                 if (!day)
                   return (
-                    <div key={`${wi}-${di}`} style={{ minHeight: 0, background: th.calBg, borderTop: `1px solid ${th.gridBorder}`, borderRight: di < 6 ? `1px solid ${th.gridBorder}` : "none", display: "flex", alignItems: "center", justifyContent: "center", padding: 8 }}>
-                      <img src="/logo.png" alt="" style={{ maxWidth: "90%", maxHeight: "80%", objectFit: "contain" }} />
-                    </div>
+                    {(() => {
+                      // Show logo only once: prefer last empty cell (bottom-right), else first empty cell (top-left)
+                      const isLastRow = wi === weeks.length - 1;
+                      const isFirstRow = wi === 0;
+                      const lastEmptyInRow = isLastRow && di === 6;
+                      const firstEmptyInRow = isFirstRow && di === 0;
+                      // Find if this is the LAST empty cell overall
+                      const allEmpty: string[] = [];
+                      weeks.forEach((w, wIdx) => w.forEach((d, dIdx) => { if (!d) allEmpty.push(`${wIdx}-${dIdx}`); }));
+                      const lastEmpty = allEmpty[allEmpty.length - 1];
+                      const showLogo = `${wi}-${di}` === lastEmpty;
+                      return (
+                        <div key={`${wi}-${di}`} style={{ minHeight: 0, background: th.calBg, borderTop: `1px solid ${th.gridBorder}`, borderRight: di < 6 ? `1px solid ${th.gridBorder}` : "none", display: "flex", alignItems: "center", justifyContent: "center", padding: 8, opacity: 0.5 }}>
+                          {showLogo && <img src="/logo.png" alt="" style={{ maxWidth: "90%", maxHeight: "80%", objectFit: "contain" }} />}
+                        </div>
+                      );
+                    })()}
                   );
                 const key = dkey(cY, cM, day);
                 const dd = dayMap[key];
@@ -2413,7 +2427,8 @@ export default function BudgetForecast() {
                         )}
                         <div style={{ display: "flex", alignItems: "center", gap: 2, marginLeft: "auto" }}>
                           {di === 0 && <span onClick={(e) => { e.stopPropagation(); setZoomWeek(wi); }} className="cell-plus" title="Week view" style={{ cursor: "pointer", opacity: 0, display: "flex", alignItems: "center" }}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></span>}
-                          <span onClick={(e) => { e.stopPropagation(); openAdd(key); }} className="cell-plus" style={{ width: 16, height: 16, borderRadius: 4, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", fontSize: 14, color: "#94a3b8", lineHeight: 1, opacity: 0 }}>+</span>
+                          <span onClick={(e) => { e.stopPropagation(); setEditTx(null); setEditDate(null); setForm({ name: "", amount: "", type: "expense", recurrence: "none", date: key, autopay: false, tags: "", highlight: "", note: "" }); setTagInput(""); openPanel("tx"); }} className="cell-plus" title="Add expense" style={{ width: 16, height: 16, borderRadius: 4, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", fontSize: 14, fontWeight: 700, color: C.redDark, lineHeight: 1, opacity: 0 }}>−</span>
+                          <span onClick={(e) => { e.stopPropagation(); setEditTx(null); setEditDate(null); setForm({ name: "", amount: "", type: "income", recurrence: "none", date: key, autopay: false, tags: "", highlight: "", note: "" }); setTagInput(""); openPanel("tx"); }} className="cell-plus" title="Add income" style={{ width: 16, height: 16, borderRadius: 4, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", fontSize: 14, fontWeight: 700, color: C.greenDark, lineHeight: 1, opacity: 0 }}>+</span>
                         </div>
                       </div>
                       {day === 1 && carryOver !== 0 && (
