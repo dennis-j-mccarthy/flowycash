@@ -2379,8 +2379,8 @@ export default function BudgetForecast() {
               wk.map((day, di) => {
                 if (!day)
                   return (
-                    <div key={`${wi}-${di}`} style={{ minHeight: 0, background: th.calBg, borderTop: `1px solid ${th.gridBorder}`, borderRight: di < 6 ? `1px solid ${th.gridBorder}` : "none", opacity: 0.3, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                      <img src="/logo.png" alt="" style={{ height: "60%", maxHeight: 60, opacity: 0.15 }} />
+                    <div key={`${wi}-${di}`} style={{ minHeight: 0, background: th.calBg, borderTop: `1px solid ${th.gridBorder}`, borderRight: di < 6 ? `1px solid ${th.gridBorder}` : "none", display: "flex", alignItems: "center", justifyContent: "center", padding: 8 }}>
+                      <img src="/logo.png" alt="" style={{ maxWidth: "90%", maxHeight: "80%", objectFit: "contain" }} />
                     </div>
                   );
                 const key = dkey(cY, cM, day);
@@ -2769,8 +2769,6 @@ export default function BudgetForecast() {
         background: "#fff", borderRadius: 8, padding: "6px 12px", boxShadow: "0 4px 16px rgba(0,0,0,0.2)", border: "1.5px solid #3b82f6",
         fontSize: 13, fontWeight: 600, color: "#1e293b", whiteSpace: "nowrap" }} />
 
-      {/* Fixed logo bottom-left */}
-      <img src="/logo.png" alt="flowycash" style={{ position: "fixed", bottom: 12, left: 32, height: 120, opacity: 0.15, pointerEvents: "none", zIndex: 10 }} />
     </div>
   );
 }
