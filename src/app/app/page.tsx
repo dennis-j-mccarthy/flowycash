@@ -2417,7 +2417,7 @@ export default function BudgetForecast() {
                         {dd?.transactions.map((tx, i) => (
                           <div key={i} className="tx-chip" draggable onDragStart={(e) => onDragStart(e, tx, tx.occurrenceDate)}
                             onClick={(e) => { e.stopPropagation(); openEdit(tx, tx.occurrenceDate); }}
-                            style={{ fontSize, fontWeight: 500, padding: "2px 6px", marginTop: 2, borderRadius: 5,
+                            style={{ fontSize: 11, fontWeight: 600, padding: "1px 6px", marginTop: 1, borderRadius: 5, lineHeight: 1.3,
                               background: (tx as any).highlight ? hlColor((tx as any).highlight).bg : "transparent",
                               borderLeft: (tx as any).highlight ? `3px solid ${hlColor((tx as any).highlight).border}` : "none",
                               color: th.itemText,
