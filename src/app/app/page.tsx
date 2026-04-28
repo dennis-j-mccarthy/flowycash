@@ -2405,17 +2405,16 @@ export default function BudgetForecast() {
                     {dropTgt === key && <div style={{ position: "absolute", inset: 2, background: "rgba(59,130,246,0.06)", border: "2px dashed #3b82f6", borderRadius: 8, pointerEvents: "none", zIndex: 5 }} />}
                     <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "6px 7px" }}
                       onClick={(e) => { if (e.target === e.currentTarget) openAdd(key); }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", marginBottom: 3 }}>
-                        {isToday ? (
-                          <span onClick={(e) => { e.stopPropagation(); setZoomDay(key); }} className="day-num" style={{ fontSize: 12, fontWeight: 700, color: "#fff", background: C.blueDark, width: 22, height: 22, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", position: "relative" }}>{day}<svg className="day-mag" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ position: "absolute", right: -12, top: 2, display: "none" }}><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></span>
-                        ) : (
-                          <span onClick={(e) => { e.stopPropagation(); setZoomDay(key); }} className="day-num" style={{ fontSize: 11, fontWeight: 700, color: "#1e293b", lineHeight: "18px", cursor: "pointer", position: "relative" }}>{day}<svg className="day-mag" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ position: "absolute", right: -12, top: 2, display: "none" }}><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></span>
-                        )}
-                        <span onClick={(e) => { e.stopPropagation(); setZoomWeek(wi); }} className="cell-plus" title="Week view"
-                          style={{ width: 16, height: 16, borderRadius: 4, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", opacity: 0 }}>
-                          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-                        </span>
-                        <span onClick={(e) => { e.stopPropagation(); openAdd(key); }} className="cell-plus" style={{ marginLeft: "auto", width: 16, height: 16, borderRadius: 4, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", fontSize: 14, color: "#94a3b8", lineHeight: 1, opacity: 0 }}>+</span>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 3 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 3 }}>
+                          {di === 0 && <span onClick={(e) => { e.stopPropagation(); setZoomWeek(wi); }} className="cell-plus" title="Week view" style={{ cursor: "pointer", opacity: 0, display: "flex", alignItems: "center" }}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></span>}
+                          {isToday ? (
+                            <span onClick={(e) => { e.stopPropagation(); setZoomDay(key); }} className="day-num" style={{ fontSize: 12, fontWeight: 700, color: "#fff", background: C.blueDark, width: 18, height: 18, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>{day}</span>
+                          ) : (
+                            <span onClick={(e) => { e.stopPropagation(); setZoomDay(key); }} className="day-num" style={{ fontSize: 11, fontWeight: 700, color: "#1e293b", lineHeight: "18px", cursor: "pointer" }}>{day}</span>
+                          )}
+                        </div>
+                        <span onClick={(e) => { e.stopPropagation(); openAdd(key); }} className="cell-plus" style={{ width: 16, height: 16, borderRadius: 4, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", fontSize: 14, color: "#94a3b8", lineHeight: 1, opacity: 0 }}>+</span>
                       </div>
                       {day === 1 && carryOver !== 0 && (
                         <div style={{ fontSize: 10, fontWeight: 600, padding: "2px 6px", marginBottom: 2, borderRadius: 4, background: th.totalBg, border: `1px solid ${th.totalBorder}`, color: carryOver < 0 ? C.redDark : C.greenDark, fontVariantNumeric: "tabular-nums", display: "inline-flex", alignItems: "center", gap: 3 }}>
