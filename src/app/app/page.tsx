@@ -326,6 +326,7 @@ export default function BudgetForecast() {
   const [zoomDay, setZoomDay] = useState<string | null>(null);
   const [showDashboard, setShowDashboard] = useState(false);
   const [show3MChart, setShow3MChart] = useState(false);
+  const [chartMonths, setChartMonths] = useState(1);
   const [showMonthNote, setShowMonthNote] = useState(false);
   const [tutorialStep, setTutorialStep] = useState(() => typeof window !== "undefined" && localStorage.getItem("flowycash-tutorial-done") ? -1 : 0);
   const [shareMsg, setShareMsg] = useState("");
@@ -968,17 +969,13 @@ export default function BudgetForecast() {
               style={{ width: 32, height: 32, borderRadius: "50%", border: showTagPills ? `1.5px solid ${th.accent}` : "1.5px solid rgba(255,255,255,0.3)", background: showTagPills ? "rgba(255,255,255,0.9)" : "rgba(255,255,255,0.1)", display: "flex", alignItems: "center", justifyContent: "center" }}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={showTagPills ? th.headerBg : th.headerText} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
             </button>
-            <button data-tour="chart" onClick={() => setShowChart((v) => !v)} className="bf-btn" title="Chart"
-              style={{ width: 32, height: 32, borderRadius: "50%", border: showChart ? `1.5px solid ${th.accent}` : "1.5px solid rgba(255,255,255,0.3)", background: showChart ? "rgba(255,255,255,0.9)" : "rgba(255,255,255,0.1)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={showChart ? th.headerBg : th.headerText} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+            <button data-tour="chart" onClick={() => setShow3MChart(true)} className="bf-btn" title="Cashflow Chart"
+              style={{ width: 32, height: 32, borderRadius: "50%", border: "1.5px solid rgba(255,255,255,0.3)", background: "rgba(255,255,255,0.1)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={th.headerText} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
             </button>
             <button onClick={startListening} className="bf-btn" title="Voice command"
               style={{ width: 32, height: 32, borderRadius: "50%", border: listening ? `1.5px solid #ef4444` : "1.5px solid rgba(255,255,255,0.3)", background: listening ? "#fee2e2" : "rgba(255,255,255,0.1)", display: "flex", alignItems: "center", justifyContent: "center", animation: listening ? "pulse 1s infinite" : "none" }}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={listening ? "#ef4444" : th.headerText} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
-            </button>
-            <button onClick={() => setShow3MChart(true)} className="bf-btn" title="3-Month Trend"
-              style={{ width: 32, height: 32, borderRadius: "50%", border: "1.5px solid rgba(255,255,255,0.3)", background: "rgba(255,255,255,0.1)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={th.headerText} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="3" width="22" height="18" rx="2"/><line x1="8" y1="3" x2="8" y2="21"/><line x1="16" y1="3" x2="16" y2="21"/><polyline points="4 15 8 9 12 13 16 7 20 11"/></svg>
             </button>
             <button data-tour="dashboard" onClick={() => setShowDashboard(true)} className="bf-btn" title="Dashboard"
               style={{ width: 32, height: 32, borderRadius: "50%", border: "1.5px solid rgba(255,255,255,0.3)", background: "rgba(255,255,255,0.1)", display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -1118,8 +1115,8 @@ export default function BudgetForecast() {
         </div>
       )}
 
-      {/* Cashflow Chart */}
-      {showChart && data.length > 0 && (() => {
+      {/* Old inline chart removed — now using modal */}
+      {false && (() => {
         const balances = data.map((d) => d.balance);
         const maxB = Math.max(...balances, 0);
         const minB = Math.min(...balances, 0);
@@ -1277,9 +1274,10 @@ export default function BudgetForecast() {
         }
 
         // Now generate 90 days from today
-        const days90: { date: string; bal: number; month: number; day: number; monthName: string }[] = [];
+        const daysN: { date: string; bal: number; month: number; day: number; monthName: string }[] = [];
         let bal90 = startBal;
-        for (let i = 0; i < 90; i++) {
+        const totalChartDays = chartMonths * 30;
+        for (let i = 0; i < totalChartDays; i++) {
           const d = new Date(today);
           d.setDate(d.getDate() + i);
           const dk = dkey(d.getFullYear(), d.getMonth(), d.getDate());
@@ -1300,15 +1298,15 @@ export default function BudgetForecast() {
               bal90 += ((eff.type || tx.type) === "income" ? 1 : -1) * Math.abs(eff.amount ?? tx.amount);
             });
           });
-          days90.push({ date: dk, bal: Math.round(bal90 * 100) / 100, month: d.getMonth(), day: d.getDate(), monthName: MONTHS[d.getMonth()] });
+          daysN.push({ date: dk, bal: Math.round(bal90 * 100) / 100, month: d.getMonth(), day: d.getDate(), monthName: MONTHS[d.getMonth()] });
         }
 
-        const allBals = days90.map((d) => d.bal);
+        const allBals = daysN.map((d) => d.bal);
         const maxB = Math.max(...allBals, 0);
         const minB = Math.min(...allBals, 0);
         const range = maxB - minB || 1;
-        const negDays90 = days90.filter((d) => d.bal < 0);
-        const lowDay90 = days90.reduce((min, d) => d.bal < min.bal ? d : min, days90[0]);
+        const negDaysN = daysN.filter((d) => d.bal < 0);
+        const lowDayN = daysN.reduce((min, d) => d.bal < min.bal ? d : min, daysN[0]);
         const cw = 900, ch = 220, padL = 55, padT = 10, padB = 30;
         const chartW = cw - padL, chartH = ch - padT - padB;
         const zeroY = padT + ((maxB - 0) / range) * chartH;
@@ -1316,11 +1314,11 @@ export default function BudgetForecast() {
         // Month boundaries
         const monthBounds: { month: string; startIdx: number }[] = [];
         let prevMonth = -1;
-        days90.forEach((d, i) => { if (d.month !== prevMonth) { monthBounds.push({ month: d.monthName, startIdx: i }); prevMonth = d.month; } });
+        daysN.forEach((d, i) => { if (d.month !== prevMonth) { monthBounds.push({ month: d.monthName, startIdx: i }); prevMonth = d.month; } });
 
         // Tag pie data for the 90 days
-        const tagExp90: Record<string, number> = {};
-        days90.forEach((dd) => {
+        const tagExpN: Record<string, number> = {};
+        daysN.forEach((dd) => {
           const mStart = dkey(parseInt(dd.date.slice(0,4)), parseInt(dd.date.slice(5,7))-1, 1);
           const mEnd = dkey(parseInt(dd.date.slice(0,4)), parseInt(dd.date.slice(5,7))-1, dim(parseInt(dd.date.slice(0,4)), parseInt(dd.date.slice(5,7))-1));
           allTxs.forEach((tx) => {
@@ -1338,18 +1336,18 @@ export default function BudgetForecast() {
               const ovClean = ov ? Object.fromEntries(Object.entries(ov).filter(([, v]) => v != null)) : {};
               const eff = ov ? { ...tx, ...ovClean } : tx;
               const amt = Math.abs(eff.amount ?? tx.amount);
-              tags.forEach((tag: string) => { tagExp90[tag] = (tagExp90[tag] || 0) + amt; });
+              tags.forEach((tag: string) => { tagExpN[tag] = (tagExpN[tag] || 0) + amt; });
             });
           });
         });
-        const tagSorted90 = Object.entries(tagExp90).sort((a, b) => b[1] - a[1]);
-        const tagTotal90 = tagSorted90.reduce((s, [, v]) => s + v, 0) || 1;
+        const tagSortedN = Object.entries(tagExpN).sort((a, b) => b[1] - a[1]);
+        const tagTotalN = tagSortedN.reduce((s, [, v]) => s + v, 0) || 1;
 
         // Pie chart geometry
         const pieR = 70, pieCx = 80, pieCy = 80;
         let pieAngle = 0;
-        const pieSlices = tagSorted90.map(([tag, total]) => {
-          const pct = total / tagTotal90;
+        const pieSlices = tagSortedN.map(([tag, total]) => {
+          const pct = total / tagTotalN;
           const startAngle = pieAngle;
           pieAngle += pct * 360;
           const endAngle = pieAngle;
@@ -1365,8 +1363,8 @@ export default function BudgetForecast() {
         });
 
         // Points for chart
-        const pts90 = days90.map((d, i) => ({
-          x: padL + (i / (days90.length - 1)) * chartW,
+        const pts90 = daysN.map((d, i) => ({
+          x: padL + (i / (daysN.length - 1)) * chartW,
           y: padT + ((maxB - d.bal) / range) * chartH,
           ...d,
         }));
@@ -1380,8 +1378,18 @@ export default function BudgetForecast() {
               onClick={(e) => e.stopPropagation()}>
               <div style={{ background: th.headerBg, padding: "20px 24px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <div>
-                  <div style={{ fontSize: 12, color: th.headerText, opacity: 0.7 }}>90-Day Cashflow Forecast</div>
-                  <div style={{ fontSize: 20, fontWeight: 800, color: "#fff" }}>Today → {days90[89]?.monthName} {days90[89]?.day}</div>
+                  <div style={{ fontSize: 12, color: th.headerText, opacity: 0.7 }}>Cashflow Forecast</div>
+                  <div style={{ fontSize: 20, fontWeight: 800, color: "#fff" }}>Today → {daysN[totalChartDays - 1]?.monthName} {daysN[totalChartDays - 1]?.day}</div>
+                  <div style={{ display: "flex", gap: 4, marginTop: 8 }}>
+                    {[1, 2, 3, 4, 5, 6].map((m) => (
+                      <button key={m} onClick={() => setChartMonths(m)} className="bf-btn"
+                        style={{ padding: "4px 10px", borderRadius: 8, border: "none", fontSize: 11, fontWeight: 700,
+                          background: chartMonths === m ? "#fff" : "rgba(255,255,255,0.15)",
+                          color: chartMonths === m ? th.headerBg : th.headerText }}>
+                        {m}mo
+                      </button>
+                    ))}
+                  </div>
                 </div>
                 <button onClick={() => setShow3MChart(false)} className="bf-btn" style={{ border: "none", background: "rgba(255,255,255,0.15)", color: "#fff", fontSize: 18, width: 28, height: 28, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
               </div>
@@ -1398,7 +1406,7 @@ export default function BudgetForecast() {
                   {minB < 0 && <text x={padL - 4} y={ch - padB} textAnchor="end" fill="#ef4444" fontSize="8">{fmtShort(minB)}</text>}
                   {/* Month dividers */}
                   {monthBounds.slice(1).map((mb, i) => {
-                    const x = padL + (mb.startIdx / (days90.length - 1)) * chartW;
+                    const x = padL + (mb.startIdx / (daysN.length - 1)) * chartW;
                     return <g key={i}><line x1={x} y1={padT} x2={x} y2={ch - padB} stroke="#e2e8f0" strokeWidth="1" strokeDasharray="4 4" /><text x={x + 4} y={ch - 10} fill="#64748b" fontSize="9" fontWeight="600">{mb.month}</text></g>;
                   })}
                   <text x={padL + 4} y={ch - 10} fill="#64748b" fontSize="9" fontWeight="600">{monthBounds[0]?.month}</text>
@@ -1414,34 +1422,34 @@ export default function BudgetForecast() {
                 <div style={{ display: "flex", gap: 12, marginTop: 16 }}>
                   <div style={{ flex: 1, padding: "12px", borderRadius: 10, background: "#f8fafc", textAlign: "center" }}>
                     <div style={{ fontSize: 10, color: "#94a3b8", fontWeight: 600, textTransform: "uppercase" }}>Today</div>
-                    <div style={{ fontSize: 18, fontWeight: 800, color: days90[0]?.bal < 0 ? C.redDark : C.greenDark }}>{fmt(days90[0]?.bal || 0)}</div>
+                    <div style={{ fontSize: 18, fontWeight: 800, color: daysN[0]?.bal < 0 ? C.redDark : C.greenDark }}>{fmt(daysN[0]?.bal || 0)}</div>
                   </div>
                   <div style={{ flex: 1, padding: "12px", borderRadius: 10, background: "#f8fafc", textAlign: "center" }}>
                     <div style={{ fontSize: 10, color: "#94a3b8", fontWeight: 600, textTransform: "uppercase" }}>Lowest</div>
-                    <div style={{ fontSize: 18, fontWeight: 800, color: lowDay90.bal < 0 ? C.redDark : "#64748b" }}>{fmt(lowDay90.bal)}</div>
-                    <div style={{ fontSize: 10, color: "#94a3b8" }}>{lowDay90.monthName} {lowDay90.day}</div>
+                    <div style={{ fontSize: 18, fontWeight: 800, color: lowDayN.bal < 0 ? C.redDark : "#64748b" }}>{fmt(lowDayN.bal)}</div>
+                    <div style={{ fontSize: 10, color: "#94a3b8" }}>{lowDayN.monthName} {lowDayN.day}</div>
                   </div>
                   <div style={{ flex: 1, padding: "12px", borderRadius: 10, background: "#f8fafc", textAlign: "center" }}>
-                    <div style={{ fontSize: 10, color: "#94a3b8", fontWeight: 600, textTransform: "uppercase" }}>Day 90</div>
-                    <div style={{ fontSize: 18, fontWeight: 800, color: days90[89]?.bal < 0 ? C.redDark : C.greenDark }}>{fmt(days90[89]?.bal || 0)}</div>
+                    <div style={{ fontSize: 10, color: "#94a3b8", fontWeight: 600, textTransform: "uppercase" }}>Day {totalChartDays}</div>
+                    <div style={{ fontSize: 18, fontWeight: 800, color: daysN[totalChartDays - 1]?.bal < 0 ? C.redDark : C.greenDark }}>{fmt(daysN[totalChartDays - 1]?.bal || 0)}</div>
                   </div>
-                  <div style={{ flex: 1, padding: "12px", borderRadius: 10, background: negDays90.length ? "#fff5f5" : "#f0fdf4", textAlign: "center" }}>
+                  <div style={{ flex: 1, padding: "12px", borderRadius: 10, background: negDaysN.length ? "#fff5f5" : "#f0fdf4", textAlign: "center" }}>
                     <div style={{ fontSize: 10, color: "#94a3b8", fontWeight: 600, textTransform: "uppercase" }}>Negative Days</div>
-                    <div style={{ fontSize: 18, fontWeight: 800, color: negDays90.length ? C.redDark : C.greenDark }}>{negDays90.length}</div>
+                    <div style={{ fontSize: 18, fontWeight: 800, color: negDaysN.length ? C.redDark : C.greenDark }}>{negDaysN.length}</div>
                   </div>
                 </div>
                 {/* Tag Pie Chart */}
-                {tagSorted90.length > 0 && (
+                {tagSortedN.length > 0 && (
                   <div style={{ marginTop: 20 }}>
-                    <div style={{ fontSize: 11, fontWeight: 600, color: "#94a3b8", textTransform: "uppercase", marginBottom: 12 }}>90-Day Spending by Category</div>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: "#94a3b8", textTransform: "uppercase", marginBottom: 12 }}>{totalChartDays}-Day Spending by Category</div>
                     <div style={{ display: "flex", gap: 24, alignItems: "center" }}>
                       <svg viewBox="0 0 160 160" style={{ width: 160, height: 160, flexShrink: 0 }}>
                         {pieSlices.map((s) => <path key={s.tag} d={s.path} fill={s.color} opacity={0.8} />)}
                       </svg>
                       <div style={{ flex: 1 }}>
-                        {tagSorted90.map(([tag, total]) => {
+                        {tagSortedN.map(([tag, total]) => {
                           const tc = tagColor(tag);
-                          const pct = ((total / tagTotal90) * 100).toFixed(0);
+                          const pct = ((total / tagTotalN) * 100).toFixed(0);
                           return (
                             <div key={tag} style={{ display: "flex", alignItems: "center", gap: 8, padding: "3px 0", fontSize: 12 }}>
                               <div style={{ width: 10, height: 10, borderRadius: 2, background: tc.text, flexShrink: 0 }} />
@@ -2371,8 +2379,8 @@ export default function BudgetForecast() {
               wk.map((day, di) => {
                 if (!day)
                   return (
-                    <div key={`${wi}-${di}`} style={{ minHeight: 0, background: th.calBg, borderTop: `1px solid ${th.gridBorder}`, borderRight: di < 6 ? `1px solid ${th.gridBorder}` : "none", opacity: 0.5, display: "flex", alignItems: "flex-start", justifyContent: "center", paddingTop: 4 }}>
-                      {di === 0 && <button onClick={() => setZoomWeek(wi)} className="bf-btn" title="Week view" style={{ border: "none", background: "none", cursor: "pointer", padding: 2, opacity: 0.5 }}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#64748b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></button>}
+                    <div key={`${wi}-${di}`} style={{ minHeight: 0, background: th.calBg, borderTop: `1px solid ${th.gridBorder}`, borderRight: di < 6 ? `1px solid ${th.gridBorder}` : "none", opacity: 0.3, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      <img src="/logo.png" alt="" style={{ height: "60%", maxHeight: 60, opacity: 0.15 }} />
                     </div>
                   );
                 const key = dkey(cY, cM, day);
@@ -2401,9 +2409,12 @@ export default function BudgetForecast() {
                         {isToday ? (
                           <span onClick={(e) => { e.stopPropagation(); setZoomDay(key); }} className="day-num" style={{ fontSize: 12, fontWeight: 700, color: "#fff", background: C.blueDark, width: 22, height: 22, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", position: "relative" }}>{day}<svg className="day-mag" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ position: "absolute", right: -12, top: 2, display: "none" }}><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></span>
                         ) : (
-                          <span onClick={(e) => { e.stopPropagation(); setZoomDay(key); }} className="day-num" style={{ fontSize: 14, fontWeight: 700, color: "#1e293b", lineHeight: "22px", cursor: "pointer", position: "relative" }}>{day}<svg className="day-mag" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ position: "absolute", right: -12, top: 2, display: "none" }}><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></span>
+                          <span onClick={(e) => { e.stopPropagation(); setZoomDay(key); }} className="day-num" style={{ fontSize: 11, fontWeight: 700, color: "#1e293b", lineHeight: "18px", cursor: "pointer", position: "relative" }}>{day}<svg className="day-mag" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ position: "absolute", right: -12, top: 2, display: "none" }}><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></span>
                         )}
-                        {di === 0 && <button onClick={(e) => { e.stopPropagation(); setZoomWeek(wi); }} className="bf-btn" title="Week view" style={{ border: "none", background: "none", cursor: "pointer", padding: 1, opacity: 0.4, marginLeft: 2 }}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#64748b" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></button>}
+                        <span onClick={(e) => { e.stopPropagation(); setZoomWeek(wi); }} className="cell-plus" title="Week view"
+                          style={{ width: 16, height: 16, borderRadius: 4, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", opacity: 0 }}>
+                          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                        </span>
                         <span onClick={(e) => { e.stopPropagation(); openAdd(key); }} className="cell-plus" style={{ marginLeft: "auto", width: 16, height: 16, borderRadius: 4, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", fontSize: 14, color: "#94a3b8", lineHeight: 1, opacity: 0 }}>+</span>
                       </div>
                       {day === 1 && carryOver !== 0 && (
