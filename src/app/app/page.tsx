@@ -2770,7 +2770,7 @@ export default function BudgetForecast() {
         fontSize: 13, fontWeight: 600, color: "#1e293b", whiteSpace: "nowrap" }} />
 
       {/* Fixed logo bottom-left */}
-      <img src="/logo.png" alt="flowycash" style={{ position: "fixed", bottom: 8, left: 16, height: 120, opacity: 0.3, pointerEvents: "none", zIndex: 1 }} />
+      <img src="/logo.png" alt="flowycash" style={{ position: "fixed", bottom: 12, left: 32, height: 120, opacity: 0.15, pointerEvents: "none", zIndex: 10 }} />
     </div>
   );
 }
