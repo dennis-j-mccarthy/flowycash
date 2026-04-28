@@ -928,6 +928,7 @@ export default function BudgetForecast() {
     .bf-select:focus { border-color:#3b82f6; box-shadow:0 0 0 3px rgba(59,130,246,0.1); }
     .cal-cell { transition: background 0.1s; }
     .cal-cell:hover { background: #f8fafc !important; }
+    .cal-cell:hover .cell-plus { opacity: 1 !important; }
     .tx-chip { transition: all 0.1s; cursor: grab; }
     .tx-chip:hover { background: #eef2ff !important; outline: 1.5px solid #818cf8; outline-offset: -1px; border-radius: 5px; }
     .list-row { transition: all 0.1s; }
@@ -2404,6 +2405,7 @@ export default function BudgetForecast() {
                         )}
                         {di === 0 && <button onClick={(e) => { e.stopPropagation(); setZoomWeek(wi); }} className="bf-btn" title="Week view" style={{ border: "none", background: "none", cursor: "pointer", padding: 1, opacity: 0.4, marginLeft: 2 }}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#64748b" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></button>}
                         {dd?.hasReset && <span style={{ fontSize: 8, fontWeight: 700, background: C.blueDark, color: "#fff", padding: "2px 5px", borderRadius: 4, letterSpacing: "0.04em" }}>RST</span>}
+                        <span onClick={(e) => { e.stopPropagation(); openAdd(key); }} className="cell-plus" style={{ marginLeft: "auto", width: 16, height: 16, borderRadius: 4, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", fontSize: 14, color: "#94a3b8", lineHeight: 1, opacity: 0 }}>+</span>
                       </div>
                       {day === 1 && carryOver !== 0 && (
                         <div style={{ fontSize: 10, fontWeight: 600, padding: "2px 6px", marginBottom: 2, borderRadius: 4, background: th.totalBg, border: `1px solid ${th.totalBorder}`, color: carryOver < 0 ? C.redDark : C.greenDark, fontVariantNumeric: "tabular-nums", display: "inline-flex", alignItems: "center", gap: 3 }}>
