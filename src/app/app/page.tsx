@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { UserButton, SignInButton, useAuth } from "@clerk/nextjs";
+import { UserButton, useAuth } from "@clerk/nextjs";
 import type { Transaction, OverrideData, AppState } from "@/lib/types";
 
 const DAYS = ["S", "M", "T", "W", "T", "F", "S"];
@@ -160,9 +160,7 @@ function AuthUI({ headerText, isPro, onShare }: { headerText: string; isPro: boo
     </div>
   );
   return (
-    <SignInButton mode="redirect">
-      <button className="bf-btn" style={{ padding: "4px 14px", borderRadius: 20, border: "1.5px solid rgba(255,255,255,0.3)", background: "rgba(255,255,255,0.1)", color: headerText, fontSize: 11, fontWeight: 600 }}>Sign In</button>
-    </SignInButton>
+    <a href="/sign-in" className="bf-btn" style={{ padding: "4px 14px", borderRadius: 20, border: "1.5px solid rgba(255,255,255,0.3)", background: "rgba(255,255,255,0.1)", color: headerText, fontSize: 11, fontWeight: 600, textDecoration: "none" }}>Sign In</a>
   );
 }
 

@@ -1,8 +1,11 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { SignInButton, SignUpButton, useAuth } from "@clerk/nextjs";
+import { useAuth } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
+
+const SIGN_IN_URL = "/sign-in";
+const SIGN_UP_URL = "/sign-up";
 
 const SCREENSHOTS = [
   {
@@ -93,16 +96,12 @@ export default function LandingPage() {
             </button>
           ) : (
             <>
-              <SignInButton mode="redirect">
-                <button style={{ padding: "10px 20px", borderRadius: 12, border: "1.5px solid #e2e8f0", background: "#fff", color: "#1e293b", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
+                <button onClick={() => router.push(SIGN_IN_URL)} style={{ padding: "10px 20px", borderRadius: 12, border: "1.5px solid #e2e8f0", background: "#fff", color: "#1e293b", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
                   Sign In
                 </button>
-              </SignInButton>
-              <SignInButton mode="redirect">
-                <button style={{ padding: "10px 28px", borderRadius: 12, border: "none", background: "#068B40", color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>
+                <button onClick={() => router.push(SIGN_UP_URL)} style={{ padding: "10px 28px", borderRadius: 12, border: "none", background: "#068B40", color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>
                   Get Started Free
                 </button>
-              </SignInButton>
             </>
           )}
         </div>
@@ -128,11 +127,9 @@ export default function LandingPage() {
               </button>
             ) : (
               <>
-                <SignInButton mode="redirect">
-                  <button style={{ padding: "14px 36px", borderRadius: 14, border: "none", background: "#068B40", color: "#fff", fontSize: 16, fontWeight: 700, cursor: "pointer", boxShadow: "0 4px 14px rgba(6,139,64,0.3)" }}>
+                  <button onClick={() => router.push(SIGN_UP_URL)} style={{ padding: "14px 36px", borderRadius: 14, border: "none", background: "#068B40", color: "#fff", fontSize: 16, fontWeight: 700, cursor: "pointer", boxShadow: "0 4px 14px rgba(6,139,64,0.3)" }}>
                     Start Free →
                   </button>
-                </SignInButton>
                 <button onClick={() => router.push("/app")} style={{ padding: "14px 36px", borderRadius: 14, border: "1.5px solid #e2e8f0", background: "#fff", color: "#1e293b", fontSize: 16, fontWeight: 600, cursor: "pointer" }}>
                   Try Demo
                 </button>
@@ -245,11 +242,9 @@ export default function LandingPage() {
                 <span style={{ color: "#cbd5e1" }}>✗ Backup & restore</span><br />
                 <span style={{ color: "#cbd5e1" }}>✗ Tags & categories</span>
               </div>
-              <SignInButton mode="redirect">
-                <button style={{ marginTop: 20, width: "100%", padding: "12px", borderRadius: 12, border: "1.5px solid #e2e8f0", background: "#fff", color: "#1e293b", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
+                <button onClick={() => router.push(SIGN_UP_URL)} style={{ marginTop: 20, width: "100%", padding: "12px", borderRadius: 12, border: "1.5px solid #e2e8f0", background: "#fff", color: "#1e293b", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
                   Get Started
                 </button>
-              </SignInButton>
             </div>
             {/* Pro */}
             <div style={{ padding: "32px", borderRadius: 20, border: "2px solid #068B40", background: "#e8f8ef", textAlign: "left", position: "relative" }}>
@@ -274,11 +269,9 @@ export default function LandingPage() {
                   Subscribe Pro →
                 </button>
               ) : (
-                <SignUpButton mode="redirect">
-                  <button onClick={() => setWantsPro(true)} style={{ marginTop: 20, width: "100%", padding: "12px", borderRadius: 12, border: "none", background: "#068B40", color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>
+                  <button onClick={() => { setWantsPro(true); router.push(SIGN_UP_URL); }} style={{ marginTop: 20, width: "100%", padding: "12px", borderRadius: 12, border: "none", background: "#068B40", color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>
                     Start Pro →
                   </button>
-                </SignUpButton>
               )}
             </div>
           </div>
@@ -294,11 +287,9 @@ export default function LandingPage() {
             Open Your Calendar →
           </button>
         ) : (
-          <SignInButton mode="redirect">
-            <button style={{ padding: "16px 40px", borderRadius: 14, border: "none", background: "#fff", color: "#068B40", fontSize: 16, fontWeight: 700, cursor: "pointer" }}>
+            <button onClick={() => router.push(SIGN_UP_URL)} style={{ padding: "16px 40px", borderRadius: 14, border: "none", background: "#fff", color: "#068B40", fontSize: 16, fontWeight: 700, cursor: "pointer" }}>
               Get Started Free →
             </button>
-          </SignInButton>
         )}
       </section>
 
