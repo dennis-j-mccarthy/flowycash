@@ -331,6 +331,16 @@ export default function BudgetForecast() {
   const [tutorialStep, setTutorialStep] = useState(() => typeof window !== "undefined" && localStorage.getItem("flowycash-tutorial-done") ? -1 : 0);
   const [shareMsg, setShareMsg] = useState("");
   const [showShare, setShowShare] = useState(false);
+  const [showWeeklyPlanner, setShowWeeklyPlanner] = useState(false);
+  const [plannerStep, setPlannerStep] = useState(0);
+  const [plannerData, setPlannerData] = useState({
+    outcomes: "",
+    parsedOutcomes: [] as string[],
+    highFocus: "",
+    lowFocus: "",
+    energyMap: { high: "", medium: "", recovery: "" },
+    buckets: { mon: [] as string[], tue: [] as string[], wed: [] as string[], thu: [] as string[], fri: [] as string[], sat: [] as string[] },
+  });
   const [shareEmail, setShareEmail] = useState("");
   const [sharedWith, setSharedWith] = useState<{ email: string }[]>([]);
   const [snapPreview, setSnapPreview] = useState<{ balance: number; date: string; moved: { name: string; from: string; to: string; amount: number }[]; unaccounted: { name: string; amount: number; type: string; date: string }[]; imageUrl: string } | null>(null);
@@ -969,6 +979,10 @@ export default function BudgetForecast() {
             <button data-tour="tags" onClick={() => setShowTagPills((v) => !v)} className="bf-btn" title="Tags"
               style={{ width: 32, height: 32, borderRadius: "50%", border: showTagPills ? `1.5px solid ${th.accent}` : "1.5px solid rgba(255,255,255,0.3)", background: showTagPills ? "rgba(255,255,255,0.9)" : "rgba(255,255,255,0.1)", display: "flex", alignItems: "center", justifyContent: "center" }}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={showTagPills ? th.headerBg : th.headerText} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+            </button>
+            <button onClick={() => { setShowWeeklyPlanner(true); setPlannerStep(0); setPlannerData({ outcomes: "", parsedOutcomes: [], highFocus: "", lowFocus: "", energyMap: { high: "", medium: "", recovery: "" }, buckets: { mon: [], tue: [], wed: [], thu: [], fri: [], sat: [] } }); }} className="bf-btn" title="Weekly Planner"
+              style={{ width: 32, height: 32, borderRadius: "50%", border: "1.5px solid rgba(255,255,255,0.3)", background: "rgba(255,255,255,0.1)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={th.headerText} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2z"/></svg>
             </button>
             <button data-tour="chart" onClick={() => setShow3MChart(true)} className="bf-btn" title="Cashflow Chart"
               style={{ width: 32, height: 32, borderRadius: "50%", border: "1.5px solid rgba(255,255,255,0.3)", background: "rgba(255,255,255,0.1)", display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -2613,6 +2627,197 @@ export default function BudgetForecast() {
           )}
         </div>
       </div>
+
+      {/* Weekly Planner Wizard */}
+      {showWeeklyPlanner && (() => {
+        const DAYS_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+        const steps = [
+          { title: "What does success look like?", subtitle: "Step 1 of 4 — Define Outcomes" },
+          { title: "When are you sharpest?", subtitle: "Step 2 of 4 — Map Energy" },
+          { title: "Assign to your week", subtitle: "Step 3 of 4 — Schedule" },
+          { title: "Your week at a glance", subtitle: "Step 4 of 4 — Review" },
+        ];
+        const step = steps[plannerStep];
+        return (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", backdropFilter: "blur(8px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, animation: "panelIn 0.18s ease" }}
+            onClick={() => setShowWeeklyPlanner(false)}>
+            <div style={{ background: "#fff", borderRadius: 20, width: 600, maxWidth: "95vw", maxHeight: "90vh", overflow: "auto", boxShadow: "0 24px 80px rgba(0,0,0,0.2)" }}
+              onClick={(e) => e.stopPropagation()}>
+              {/* Header */}
+              <div style={{ background: th.headerBg, padding: "20px 24px", borderRadius: "20px 20px 0 0", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div>
+                  <div style={{ fontSize: 11, color: th.headerText, opacity: 0.7 }}>{step.subtitle}</div>
+                  <div style={{ fontSize: 20, fontWeight: 800, color: "#fff" }}>{step.title}</div>
+                </div>
+                <button onClick={() => setShowWeeklyPlanner(false)} className="bf-btn" style={{ border: "none", background: "rgba(255,255,255,0.15)", color: "#fff", fontSize: 18, width: 28, height: 28, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
+              </div>
+              {/* Progress */}
+              <div style={{ height: 3, background: "#e2e8f0" }}>
+                <div style={{ height: "100%", background: th.accent, width: `${((plannerStep + 1) / 4) * 100}%`, transition: "width 0.3s" }} />
+              </div>
+
+              <div style={{ padding: "24px" }}>
+                {/* Step 1: Outcomes */}
+                {plannerStep === 0 && (
+                  <div>
+                    <p style={{ fontSize: 14, color: "#64748b", marginBottom: 16, lineHeight: 1.6 }}>
+                      Not feelings or intentions — <strong>concrete outcomes</strong>. What specific results would make this week successful?
+                    </p>
+                    <textarea value={plannerData.outcomes} onChange={(e) => setPlannerData({ ...plannerData, outcomes: e.target.value })}
+                      placeholder={"e.g.\n• Close the Henderson deal\n• Finish tax filing\n• Run 3 times\n• Pay off the Visa card\n• Ship the landing page"}
+                      className="bf-input" style={{ fontSize: 14, padding: "14px 16px", minHeight: 150, resize: "vertical" }} />
+                    <p style={{ fontSize: 11, color: "#94a3b8", marginTop: 8 }}>List 3–5 outcomes, one per line. Be specific — "exercise more" → "run 3x this week."</p>
+                  </div>
+                )}
+
+                {/* Step 2: Energy */}
+                {plannerStep === 1 && (
+                  <div>
+                    <p style={{ fontSize: 14, color: "#64748b", marginBottom: 16, lineHeight: 1.6 }}>
+                      When during the day do you think most clearly? When do you usually lose focus?
+                    </p>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                      <div>
+                        <label style={{ fontSize: 12, fontWeight: 600, color: C.greenDark, display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
+                          <span style={{ width: 10, height: 10, borderRadius: "50%", background: C.greenDark }} /> High-focus time
+                        </label>
+                        <input value={plannerData.energyMap.high} onChange={(e) => setPlannerData({ ...plannerData, energyMap: { ...plannerData.energyMap, high: e.target.value } })}
+                          placeholder="e.g. 6am–10am" className="bf-input" style={{ fontSize: 14, padding: "10px 14px" }} />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: 12, fontWeight: 600, color: "#d97706", display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
+                          <span style={{ width: 10, height: 10, borderRadius: "50%", background: "#d97706" }} /> Medium-focus time
+                        </label>
+                        <input value={plannerData.energyMap.medium} onChange={(e) => setPlannerData({ ...plannerData, energyMap: { ...plannerData.energyMap, medium: e.target.value } })}
+                          placeholder="e.g. 10am–2pm" className="bf-input" style={{ fontSize: 14, padding: "10px 14px" }} />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: 12, fontWeight: 600, color: "#94a3b8", display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
+                          <span style={{ width: 10, height: 10, borderRadius: "50%", background: "#94a3b8" }} /> Recovery / Admin time
+                        </label>
+                        <input value={plannerData.energyMap.recovery} onChange={(e) => setPlannerData({ ...plannerData, energyMap: { ...plannerData.energyMap, recovery: e.target.value } })}
+                          placeholder="e.g. 2pm–5pm" className="bf-input" style={{ fontSize: 14, padding: "10px 14px" }} />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Step 3: Assign to buckets */}
+                {plannerStep === 2 && (() => {
+                  const outcomes = plannerData.outcomes.split("\n").map((s) => s.replace(/^[•\-*]\s*/, "").trim()).filter(Boolean);
+                  return (
+                    <div>
+                      <p style={{ fontSize: 14, color: "#64748b", marginBottom: 16, lineHeight: 1.6 }}>
+                        Drag or assign each outcome to a day. Put important work on high-focus days.
+                      </p>
+                      {/* Unassigned outcomes */}
+                      <div style={{ marginBottom: 16 }}>
+                        <div style={{ fontSize: 11, fontWeight: 600, color: "#94a3b8", textTransform: "uppercase", marginBottom: 8 }}>Outcomes to assign</div>
+                        {outcomes.map((o, i) => {
+                          const assigned = Object.values(plannerData.buckets).flat().includes(o);
+                          return (
+                            <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 12px", marginBottom: 4, borderRadius: 8, background: assigned ? "#f0fdf4" : "#f8fafc", border: "1px solid #e2e8f0", opacity: assigned ? 0.5 : 1 }}>
+                              <span style={{ fontSize: 13, color: "#1e293b", fontWeight: 600 }}>{o}</span>
+                              {!assigned && (
+                                <select onChange={(e) => {
+                                  const day = e.target.value as keyof typeof plannerData.buckets;
+                                  if (day) setPlannerData({ ...plannerData, buckets: { ...plannerData.buckets, [day]: [...plannerData.buckets[day], o] } });
+                                  e.target.value = "";
+                                }} style={{ fontSize: 11, padding: "4px 8px", borderRadius: 6, border: "1px solid #e2e8f0", color: "#64748b" }}>
+                                  <option value="">Assign →</option>
+                                  {DAYS_LABELS.map((d, di) => <option key={d} value={["mon", "tue", "wed", "thu", "fri", "sat"][di]}>{d}</option>)}
+                                </select>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                      {/* Day buckets */}
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 6 }}>
+                        {DAYS_LABELS.map((d, di) => {
+                          const dayKey = ["mon", "tue", "wed", "thu", "fri", "sat"][di] as keyof typeof plannerData.buckets;
+                          return (
+                            <div key={d} style={{ padding: "10px 8px", borderRadius: 10, background: "#f8fafc", border: "1px solid #e2e8f0", minHeight: 80 }}>
+                              <div style={{ fontSize: 11, fontWeight: 700, color: th.headerBg, marginBottom: 6, textAlign: "center" }}>{d}</div>
+                              {plannerData.buckets[dayKey].map((item, j) => (
+                                <div key={j} style={{ fontSize: 10, padding: "3px 6px", marginBottom: 3, borderRadius: 4, background: "#fff", border: "1px solid #e2e8f0", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item}</span>
+                                  <span onClick={() => setPlannerData({ ...plannerData, buckets: { ...plannerData.buckets, [dayKey]: plannerData.buckets[dayKey].filter((_, k) => k !== j) } })} style={{ cursor: "pointer", color: "#94a3b8", fontSize: 12 }}>×</span>
+                                </div>
+                              ))}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* Step 4: Review */}
+                {plannerStep === 3 && (() => {
+                  const outcomes = plannerData.outcomes.split("\n").map((s) => s.replace(/^[•\-*]\s*/, "").trim()).filter(Boolean);
+                  const unassigned = outcomes.filter((o) => !Object.values(plannerData.buckets).flat().includes(o));
+                  return (
+                    <div>
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 8, marginBottom: 20 }}>
+                        {DAYS_LABELS.map((d, di) => {
+                          const dayKey = ["mon", "tue", "wed", "thu", "fri", "sat"][di] as keyof typeof plannerData.buckets;
+                          const items = plannerData.buckets[dayKey];
+                          return (
+                            <div key={d} style={{ padding: "12px 10px", borderRadius: 12, background: items.length ? "#f0fdf4" : "#f8fafc", border: `1.5px solid ${items.length ? C.green : "#e2e8f0"}` }}>
+                              <div style={{ fontSize: 12, fontWeight: 700, color: th.headerBg, marginBottom: 8, textAlign: "center" }}>{d}</div>
+                              {items.map((item, j) => (
+                                <div key={j} style={{ fontSize: 11, padding: "4px 8px", marginBottom: 4, borderRadius: 6, background: "#fff", border: "1px solid #d1fae5", fontWeight: 600, color: "#1e293b" }}>
+                                  {item}
+                                  <div style={{ fontSize: 9, color: "#94a3b8", marginTop: 2 }}>Done = ✓ completed</div>
+                                </div>
+                              ))}
+                              {items.length === 0 && <div style={{ fontSize: 10, color: "#94a3b8", textAlign: "center" }}>—</div>}
+                            </div>
+                          );
+                        })}
+                      </div>
+                      {unassigned.length > 0 && (
+                        <div style={{ padding: "12px 16px", borderRadius: 10, background: "#fff5f5", border: "1px solid #fecaca", marginBottom: 16 }}>
+                          <div style={{ fontSize: 11, fontWeight: 600, color: C.redDark, marginBottom: 4 }}>⚠️ Unassigned — might not fit this week</div>
+                          {unassigned.map((o, i) => <div key={i} style={{ fontSize: 12, color: "#991b1b", padding: "2px 0" }}>• {o}</div>)}
+                        </div>
+                      )}
+                      <div style={{ padding: "12px 16px", borderRadius: 10, background: "#f8fafc", border: "1px solid #e2e8f0" }}>
+                        <div style={{ fontSize: 11, fontWeight: 600, color: "#64748b", marginBottom: 4 }}>⚡ Energy blocks</div>
+                        <div style={{ fontSize: 12, color: "#1e293b" }}>
+                          <span style={{ color: C.greenDark }}>●</span> High focus: {plannerData.energyMap.high || "—"} &nbsp;
+                          <span style={{ color: "#d97706" }}>●</span> Medium: {plannerData.energyMap.medium || "—"} &nbsp;
+                          <span style={{ color: "#94a3b8" }}>●</span> Recovery: {plannerData.energyMap.recovery || "—"}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* Nav buttons */}
+                <div style={{ display: "flex", justifyContent: "space-between", marginTop: 20 }}>
+                  <button onClick={() => plannerStep > 0 ? setPlannerStep(plannerStep - 1) : setShowWeeklyPlanner(false)} className="bf-btn"
+                    style={{ padding: "10px 20px", borderRadius: 10, border: "1px solid #e2e8f0", background: "#fff", color: "#64748b", fontSize: 13, fontWeight: 600 }}>
+                    {plannerStep === 0 ? "Cancel" : "Back"}
+                  </button>
+                  <button onClick={() => {
+                    if (plannerStep === 0) {
+                      const parsed = plannerData.outcomes.split("\n").map((s) => s.replace(/^[•\-*]\s*/, "").trim()).filter(Boolean);
+                      setPlannerData({ ...plannerData, parsedOutcomes: parsed });
+                    }
+                    if (plannerStep < 3) setPlannerStep(plannerStep + 1);
+                    else setShowWeeklyPlanner(false);
+                  }} className="bf-btn"
+                    style={{ padding: "10px 28px", borderRadius: 10, border: "none", background: th.headerBg, color: "#fff", fontSize: 13, fontWeight: 600 }}>
+                    {plannerStep === 3 ? "Done" : "Next →"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Share Modal */}
       {showShare && (
