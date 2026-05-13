@@ -160,7 +160,7 @@ function AuthUI({ headerText, isPro, onShare }: { headerText: string; isPro: boo
     </div>
   );
   return (
-    <SignInButton mode="modal">
+    <SignInButton mode="redirect">
       <button className="bf-btn" style={{ padding: "4px 14px", borderRadius: 20, border: "1.5px solid rgba(255,255,255,0.3)", background: "rgba(255,255,255,0.1)", color: headerText, fontSize: 11, fontWeight: 600 }}>Sign In</button>
     </SignInButton>
   );

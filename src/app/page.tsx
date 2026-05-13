@@ -93,12 +93,12 @@ export default function LandingPage() {
             </button>
           ) : (
             <>
-              <SignInButton mode="modal">
+              <SignInButton mode="redirect">
                 <button style={{ padding: "10px 20px", borderRadius: 12, border: "1.5px solid #e2e8f0", background: "#fff", color: "#1e293b", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
                   Sign In
                 </button>
               </SignInButton>
-              <SignInButton mode="modal">
+              <SignInButton mode="redirect">
                 <button style={{ padding: "10px 28px", borderRadius: 12, border: "none", background: "#068B40", color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>
                   Get Started Free
                 </button>
@@ -128,7 +128,7 @@ export default function LandingPage() {
               </button>
             ) : (
               <>
-                <SignInButton mode="modal">
+                <SignInButton mode="redirect">
                   <button style={{ padding: "14px 36px", borderRadius: 14, border: "none", background: "#068B40", color: "#fff", fontSize: 16, fontWeight: 700, cursor: "pointer", boxShadow: "0 4px 14px rgba(6,139,64,0.3)" }}>
                     Start Free →
                   </button>
@@ -245,7 +245,7 @@ export default function LandingPage() {
                 <span style={{ color: "#cbd5e1" }}>✗ Backup & restore</span><br />
                 <span style={{ color: "#cbd5e1" }}>✗ Tags & categories</span>
               </div>
-              <SignInButton mode="modal">
+              <SignInButton mode="redirect">
                 <button style={{ marginTop: 20, width: "100%", padding: "12px", borderRadius: 12, border: "1.5px solid #e2e8f0", background: "#fff", color: "#1e293b", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
                   Get Started
                 </button>
@@ -274,7 +274,7 @@ export default function LandingPage() {
                   Subscribe Pro →
                 </button>
               ) : (
-                <SignUpButton mode="modal">
+                <SignUpButton mode="redirect">
                   <button onClick={() => setWantsPro(true)} style={{ marginTop: 20, width: "100%", padding: "12px", borderRadius: 12, border: "none", background: "#068B40", color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>
                     Start Pro →
                   </button>
@@ -294,7 +294,7 @@ export default function LandingPage() {
             Open Your Calendar →
           </button>
         ) : (
-          <SignInButton mode="modal">
+          <SignInButton mode="redirect">
             <button style={{ padding: "16px 40px", borderRadius: 14, border: "none", background: "#fff", color: "#068B40", fontSize: 16, fontWeight: 700, cursor: "pointer" }}>
               Get Started Free →
             </button>
