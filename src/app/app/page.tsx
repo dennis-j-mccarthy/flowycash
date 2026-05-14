@@ -426,21 +426,12 @@ export default function BudgetForecast() {
     }
   }, [isSignedIn, isLoaded]);
 
-  // Check pro status
+  // All signed-in users get full access (Stripe paywall disabled for now)
   useEffect(() => {
     if (isSignedIn) {
-      fetch("/api/stripe/status").then((r) => r.json()).then((d) => {
-        setIsPro(d.subscribed);
-        if (d.subscribed) {
-          // Pro users exit demo mode and load their real data
-          setDemo(false);
-          localStorage.setItem("flowycash-demo", "false");
-        } else {
-          // Non-pro signed-in users get forced into demo mode
-          setDemo(true);
-          if (!demoState) setDemoState(buildDemoData());
-        }
-      });
+      setIsPro(true);
+      setDemo(false);
+      localStorage.setItem("flowycash-demo", "false");
     } else {
       setIsPro(false);
     }
