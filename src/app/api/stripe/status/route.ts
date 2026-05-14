@@ -8,7 +8,7 @@ export async function GET() {
     if (!userId) return NextResponse.json({ subscribed: false });
 
     // Admin/owner bypass — always Pro
-    const ADMIN_EMAILS = ["dennisjmccarthy@gmail.com"];
+    const ADMIN_EMAILS = ["dennisjmccarthy@gmail.com", "yogabeth@mac.com"];
     const user = await currentUser();
     const userEmail = user?.emailAddresses?.[0]?.emailAddress;
     if (userEmail && ADMIN_EMAILS.includes(userEmail)) {
