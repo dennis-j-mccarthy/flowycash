@@ -1,5 +1,5 @@
 import { stripe } from "@/lib/stripe";
-import { auth, currentUser } from "@clerk/nextjs/server";
+import { auth, clerkClient } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 
 export async function GET() {
@@ -9,10 +9,15 @@ export async function GET() {
 
     // Admin/owner bypass — always Pro
     const ADMIN_EMAILS = ["dennisjmccarthy@gmail.com", "yogabeth@mac.com"];
-    const user = await currentUser();
-    const userEmail = user?.emailAddresses?.[0]?.emailAddress;
-    if (userEmail && ADMIN_EMAILS.includes(userEmail)) {
-      return NextResponse.json({ subscribed: true, status: "active", admin: true });
+    try {
+      const clerk = await clerkClient();
+      const user = await clerk.users.getUser(userId);
+      const userEmail = user?.emailAddresses?.[0]?.emailAddress;
+      if (userEmail && ADMIN_EMAILS.includes(userEmail)) {
+        return NextResponse.json({ subscribed: true, status: "active", admin: true });
+      }
+    } catch (e) {
+      console.error("Admin check failed:", e);
     }
 
     // Check if this user has an active subscription
