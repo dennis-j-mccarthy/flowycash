@@ -27,29 +27,31 @@ export async function GET() {
       }
     }
 
-    // If signed in user has no data, check if "default" data exists and claim it
+    // If signed in user has no data, check if old/default data exists and claim it
+    const OLD_USER_IDS = ["default", "user_3BrDIpzkDVH9nmMx0EB0JDeCSHQ", "user_3DgzhD8gnHc98ZtWh6Bwm2X1rVn"];
     if (clerkId && userId === clerkId) {
       const userTxCount = await prisma.transaction.count({ where: { userId } });
       if (userTxCount === 0) {
-        const defaultTxCount = await prisma.transaction.count({ where: { userId: "default" } });
-        if (defaultTxCount > 0) {
+        const oldData = await prisma.transaction.findFirst({ where: { userId: { in: OLD_USER_IDS } } });
+        const oldUserId = oldData?.userId;
+        if (oldUserId) {
           // Claim default data for this user
           await Promise.all([
-            prisma.transaction.updateMany({ where: { userId: "default" }, data: { userId } }),
-            prisma.balanceReset.updateMany({ where: { userId: "default" }, data: { userId } }),
-            prisma.monthNote.updateMany({ where: { userId: "default" }, data: { userId } }),
+            prisma.transaction.updateMany({ where: { userId: oldUserId }, data: { userId } }),
+            prisma.balanceReset.updateMany({ where: { userId: oldUserId }, data: { userId } }),
+            prisma.monthNote.updateMany({ where: { userId: oldUserId }, data: { userId } }),
           ]);
           // Update settings - need to handle the unique constraint
-          const defaultSettings = await prisma.settings.findFirst({ where: { userId: "default" } });
+          const defaultSettings = await prisma.settings.findFirst({ where: { userId: oldUserId } });
           if (defaultSettings) {
             await prisma.settings.upsert({
               where: { userId },
               update: { startingBalance: defaultSettings.startingBalance },
               create: { id: userId, userId, startingBalance: defaultSettings.startingBalance },
             });
-            await prisma.settings.deleteMany({ where: { userId: "default" } });
+            await prisma.settings.deleteMany({ where: { userId: oldUserId } });
           }
-          console.log(`Claimed default data for user ${userId}`);
+          console.log(`Claimed data from ${oldUserId} for user ${userId}`);
         }
       }
     }
