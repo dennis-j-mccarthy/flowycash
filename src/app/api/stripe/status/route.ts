@@ -1,5 +1,5 @@
 import { stripe } from "@/lib/stripe";
-import { auth } from "@clerk/nextjs/server";
+import { auth, currentUser } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 
 export async function GET() {
@@ -8,8 +8,10 @@ export async function GET() {
     if (!userId) return NextResponse.json({ subscribed: false });
 
     // Admin/owner bypass — always Pro
-    const ADMIN_IDS = ["user_3BrDIpzkDVH9nmMx0EB0JDeCSHQ"];
-    if (ADMIN_IDS.includes(userId)) {
+    const ADMIN_EMAILS = ["dennisjmccarthy@gmail.com"];
+    const user = await currentUser();
+    const userEmail = user?.emailAddresses?.[0]?.emailAddress;
+    if (userEmail && ADMIN_EMAILS.includes(userEmail)) {
       return NextResponse.json({ subscribed: true, status: "active", admin: true });
     }
 
