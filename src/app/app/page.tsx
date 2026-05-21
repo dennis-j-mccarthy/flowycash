@@ -249,6 +249,7 @@ export default function BudgetForecast() {
   const [showTagPills, setShowTagPills] = useState(false);
   const [filterTag, setFilterTag] = useState<string | null>(null);
   const [showChart, setShowChart] = useState(false);
+  const [hidePastDays, setHidePastDays] = useState(true);
   const [theme, setTheme] = useState(() => typeof window !== "undefined" ? localStorage.getItem("flowycash-theme") || "forest" : "forest");
   const [tagInput, setTagInput] = useState("");
   const [tagSuggestions, setTagSuggestions] = useState(false);
@@ -326,7 +327,7 @@ export default function BudgetForecast() {
   const [show3MChart, setShow3MChart] = useState(false);
   const [chartMonths, setChartMonths] = useState(1);
   const [showMonthNote, setShowMonthNote] = useState(false);
-  const [tutorialStep, setTutorialStep] = useState(() => typeof window !== "undefined" && localStorage.getItem("flowycash-tutorial-done") ? -1 : 0);
+  const [tutorialStep, setTutorialStep] = useState(-1);
   const [shareMsg, setShareMsg] = useState("");
   const [showShare, setShowShare] = useState(false);
   const [showWeeklyPlanner, setShowWeeklyPlanner] = useState(false);
@@ -957,13 +958,13 @@ export default function BudgetForecast() {
       <div style={{ flexShrink: 0, background: th.headerBg, borderRadius: 14, padding: "12px 20px", marginBottom: 10 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <span data-tour="logo" style={{ cursor: "pointer", fontSize: 16, fontWeight: 700, color: "#fff", letterSpacing: "-0.02em" }} onClick={() => { setCM(new Date().getMonth()); setCY(new Date().getFullYear()); setZoomWeek(null); }}>flowycash</span>
-          <button onClick={prevM} className="bf-btn" style={{ width: 28, height: 28, borderRadius: "50%", border: "none", background: "rgba(255,255,255,0.15)", fontSize: 16, color: th.headerText, display: "flex", alignItems: "center", justifyContent: "center" }}>‹</button>
+          <button onClick={prevM} className="bf-btn bf-monthnav" style={{ width: 40, height: 40, borderRadius: "50%", border: "none", background: "rgba(255,255,255,0.15)", fontSize: 22, color: th.headerText, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>‹</button>
           <span data-tour="month" onClick={() => { const mk = `${cY}-${String(cM + 1).padStart(2, "0")}`; setMonthNoteText((state.monthNotes || {})[mk] || ""); setShowMonthNote(true); }}
             style={{ fontSize: 22, fontWeight: 700, color: "#fff", letterSpacing: "-0.03em", lineHeight: 1, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
             {MONTHS[cM]} {cY}
             {(state.monthNotes || {})[`${cY}-${String(cM + 1).padStart(2, "0")}`] && <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.5 }}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>}
           </span>
-          <button onClick={nextM} className="bf-btn" style={{ width: 28, height: 28, borderRadius: "50%", border: "none", background: "rgba(255,255,255,0.15)", fontSize: 16, color: th.headerText, display: "flex", alignItems: "center", justifyContent: "center" }}>›</button>
+          <button onClick={nextM} className="bf-btn bf-monthnav" style={{ width: 40, height: 40, borderRadius: "50%", border: "none", background: "rgba(255,255,255,0.15)", fontSize: 22, color: th.headerText, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>›</button>
           <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
             <button data-tour="tags" onClick={() => setShowTagPills((v) => !v)} className="bf-btn" title="Tags"
               style={{ width: 32, height: 32, borderRadius: "50%", border: showTagPills ? `1.5px solid ${th.accent}` : "1.5px solid rgba(255,255,255,0.3)", background: showTagPills ? "rgba(255,255,255,0.9)" : "rgba(255,255,255,0.1)", display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -2486,7 +2487,17 @@ export default function BudgetForecast() {
       {/* List View */}
       {view === "list" && (
         <div style={{ borderRadius: 14, border: "1px solid #e2e8f0", overflow: "auto", flex: 1, minHeight: 0, position: "relative" }}>
-          {data.map((dd) => {
+          {(() => {
+            const hiddenCount = data.filter((d) => d.date < todayKey).length;
+            if (hiddenCount === 0) return null;
+            return (
+              <div onClick={() => setHidePastDays((v) => !v)}
+                style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "10px 18px", background: "#f8fafc", borderBottom: "1px solid #e2e8f0", cursor: "pointer", fontSize: 12, fontWeight: 600, color: "#64748b", userSelect: "none" }}>
+                {hidePastDays ? `Show ${hiddenCount} past day${hiddenCount > 1 ? "s" : ""}` : `Hide past days`}
+              </div>
+            );
+          })()}
+          {data.filter((dd) => !hidePastDays || dd.date >= todayKey).map((dd) => {
             const isOpen = expandedDays.has(dd.date);
             const toggleDay = (e: React.MouseEvent) => {
               if (e.altKey) {
