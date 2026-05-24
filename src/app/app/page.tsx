@@ -724,12 +724,27 @@ export default function BudgetForecast() {
     if (!form.name || isNaN(amt)) return;
     if (editTx) {
       const dateChanged = form.date !== editDate;
+      const recurrenceChanged = form.recurrence !== editTx.recurrence;
+      // If the recurrence type itself changed (none↔recurring, or weekly→monthly),
+      // apply to the whole series — "just this one" makes no sense for a schedule change.
+      if (recurrenceChanged) {
+        await callApi(`/api/transactions/${editTx.id}`, { method: "PUT", body: JSON.stringify({
+          name: form.name, amount: amt, type: form.type, recurrence: form.recurrence,
+          startDate: form.date, autopay: form.autopay, tags: form.tags,
+          highlight: form.highlight, note: form.note,
+        }) });
+        if (dateChanged) {
+          setExpandedDays((prev) => { const next = new Set(prev); next.add(editDate!); next.add(form.date); return next; });
+        }
+        await reload();
+        setPanel(null);
+        return;
+      }
       if (editTx.recurrence !== "none") {
-        // Always save display properties + name directly on the base transaction
+        // Same recurrence type — save display properties + name directly on the base transaction
         await callApi(`/api/transactions/${editTx.id}`, { method: "PUT", body: JSON.stringify({ name: form.name, highlight: form.highlight, autopay: form.autopay, tags: form.tags, note: form.note }) });
         const amountChanged = amt !== Math.abs(editTx.amount);
         const typeChanged = form.type !== editTx.type;
-        // Only show recurring prompt if amount, type, or date changed
         if (dateChanged || amountChanged || typeChanged) {
           if (dateChanged) {
             setPending({ type: "move", tx: editTx, occDate: editDate!, newDate: form.date });
@@ -746,16 +761,14 @@ export default function BudgetForecast() {
           });
           return;
         }
-        // Name/display-only changes already saved above — just reload
         await reload();
         setPanel(null);
         return;
       }
-      // Non-recurring: update fields + move if date changed
+      // Non-recurring → non-recurring: update fields + move if date changed
       const body: Record<string, unknown> = { name: form.name, amount: amt, type: form.type, autopay: form.autopay, tags: form.tags, highlight: form.highlight, note: form.note };
       if (dateChanged) body.startDate = form.date;
       await callApi(`/api/transactions/${editTx.id}`, { method: "PUT", body: JSON.stringify(body) });
-      // Expand both days in list view
       if (dateChanged) {
         setExpandedDays((prev) => {
           const next = new Set(prev);
