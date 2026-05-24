@@ -1,10 +1,11 @@
 import { prisma } from "@/lib/prisma";
 import { auth } from "@clerk/nextjs/server";
+import { resolveUserId } from "@/lib/auth-helpers";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function GET() {
   const { userId: clerkId } = await auth();
-  const userId = clerkId || "default";
+  const userId = await resolveUserId(clerkId);
   const notes = await prisma.monthNote.findMany({ where: { userId } });
   const map: Record<string, string> = {};
   notes.forEach((n) => { map[n.month] = n.note; });
@@ -14,7 +15,7 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   const { month, note } = await req.json();
   const { userId: clerkId } = await auth();
-  const userId = clerkId || "default";
+  const userId = await resolveUserId(clerkId);
   if (!month) return NextResponse.json({ error: "month required" }, { status: 400 });
   if (!note || !note.trim()) {
     await prisma.monthNote.deleteMany({ where: { month, userId } });
