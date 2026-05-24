@@ -1050,11 +1050,6 @@ export default function BudgetForecast() {
               style={{ width: 32, height: 32, borderRadius: "50%", border: "1.5px solid rgba(255,255,255,0.3)", background: "rgba(255,255,255,0.1)", display: "flex", alignItems: "center", justifyContent: "center" }}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={th.headerText} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
             </button>
-            <div style={{ width: 1, height: 20, background: "rgba(255,255,255,0.2)", margin: "0 8px" }} />
-            <AuthUI headerText={th.headerText} isPro={isPro} onShare={() => {
-              fetch("/api/share").then((r) => r.json()).then((d) => setSharedWith(Array.isArray(d) ? d.map((s: any) => ({ email: s.sharedEmail })) : []));
-              setShowShare(true);
-            }} />
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           {(() => {
@@ -1118,6 +1113,11 @@ export default function BudgetForecast() {
               ))}
             </>);
           })()}
+          <div style={{ width: 1, height: 20, background: "rgba(255,255,255,0.2)", margin: "0 8px" }} />
+          <AuthUI headerText={th.headerText} isPro={isPro} onShare={() => {
+            fetch("/api/share").then((r) => r.json()).then((d) => setSharedWith(Array.isArray(d) ? d.map((s: any) => ({ email: s.sharedEmail })) : []));
+            setShowShare(true);
+          }} />
           </div>
         </div>
       </div>
