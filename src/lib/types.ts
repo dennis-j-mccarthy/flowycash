@@ -5,6 +5,7 @@ export interface Transaction {
   type: string;
   recurrence: string;
   startDate: string;
+  endDate?: string | null;
   autopay: boolean;
   tags: string;
   highlight: string;

@@ -13,6 +13,7 @@ export async function PUT(
     if (body.amount !== undefined) data.amount = body.amount;
     if (body.type !== undefined) data.type = body.type;
     if (body.startDate !== undefined) data.startDate = body.startDate;
+    if (body.endDate !== undefined) data.endDate = body.endDate;
     if (body.recurrence !== undefined) data.recurrence = body.recurrence;
     if (body.autopay !== undefined) data.autopay = body.autopay;
     if (body.tags !== undefined) data.tags = body.tags;

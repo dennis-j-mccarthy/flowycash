@@ -103,12 +103,17 @@ function friendlyDate(s: string) {
   return `${MONTHS[month].slice(0, 3)} ${day}`;
 }
 
-function getOccurrences(startDate: string, recurrence: string, rStart: string, rEnd: string) {
-  if (recurrence === "none") return startDate >= rStart && startDate <= rEnd ? [startDate] : [];
+function getOccurrences(startDate: string, recurrence: string, rStart: string, rEnd: string, endDate?: string | null) {
+  if (recurrence === "none") {
+    if (endDate && startDate > endDate) return [];
+    return startDate >= rStart && startDate <= rEnd ? [startDate] : [];
+  }
+  const effectiveEnd = endDate && endDate < rEnd ? endDate : rEnd;
+  if (startDate > effectiveEnd) return [];
   const dates: string[] = [];
   const { year, month, day } = pdk(startDate);
   let cur = new Date(year, month, day);
-  const end = new Date(pdk(rEnd).year, pdk(rEnd).month, pdk(rEnd).day);
+  const end = new Date(pdk(effectiveEnd).year, pdk(effectiveEnd).month, pdk(effectiveEnd).day);
   const start = new Date(pdk(rStart).year, pdk(rStart).month, pdk(rStart).day);
   let i = 0;
   while (cur <= end && i < 500) {
@@ -448,7 +453,7 @@ export default function BudgetForecast() {
     const txByDate: Record<string, DisplayTransaction[]> = {};
     allDk.forEach((k) => (txByDate[k] = []));
     (state.transactions || []).forEach((tx) => {
-      const occs = getOccurrences(tx.startDate, tx.recurrence, rStart, rEnd);
+      const occs = getOccurrences(tx.startDate, tx.recurrence, rStart, rEnd, tx.endDate);
       occs.forEach((odk) => {
         const ok = `${tx.id}::${odk}`;
         const ov = state.overrides[ok] as OverrideData | undefined;
@@ -478,7 +483,7 @@ export default function BudgetForecast() {
         // Build txs by day for this month
         const mTxByDay: Record<string, number> = {};
         allTxs.forEach((tx) => {
-          const occs = getOccurrences(tx.startDate, tx.recurrence, mStart, mEnd);
+          const occs = getOccurrences(tx.startDate, tx.recurrence, mStart, mEnd, tx.endDate);
           occs.forEach((odk) => {
             const ok = `${tx.id}::${odk}`;
             const ov = state.overrides[ok] as OverrideData | undefined;
@@ -804,25 +809,51 @@ export default function BudgetForecast() {
       return;
     }
     const { type, tx, occDate } = pending;
+    const dayBefore = (s: string) => {
+      const { year, month, day } = pdk(s);
+      const d = new Date(year, month, day);
+      d.setDate(d.getDate() - 1);
+      return dkey(d.getFullYear(), d.getMonth(), d.getDate());
+    };
     if (type === "delete") {
       if (choice === "one") {
         await callApi("/api/overrides", { method: "POST", body: JSON.stringify({ transactionId: tx.id, occurrenceDate: occDate, deleted: true }) });
       } else {
-        await callApi(`/api/transactions/${tx.id}`, { method: "DELETE" });
+        // "This & future": cap the series the day before occDate; past occurrences preserved.
+        // If occDate is on/before startDate, nothing in the past — delete the whole row.
+        if (occDate <= tx.startDate) {
+          await callApi(`/api/transactions/${tx.id}`, { method: "DELETE" });
+        } else {
+          await callApi(`/api/transactions/${tx.id}`, { method: "PUT", body: JSON.stringify({ endDate: dayBefore(occDate) }) });
+        }
       }
     } else if (type === "edit") {
       const fd = pending.formData!;
       if (choice === "one") {
         await callApi("/api/overrides", { method: "POST", body: JSON.stringify({ transactionId: tx.id, occurrenceDate: occDate, name: fd.name, amount: fd.amount, type: fd.type }) });
       } else {
-        await callApi(`/api/transactions/${tx.id}`, { method: "PUT", body: JSON.stringify({ name: fd.name, amount: fd.amount, type: fd.type, autopay: fd.autopay, tags: fd.tags, highlight: fd.highlight, note: fd.note }) });
+        // "This & future": cap original at day-before occDate, create new tx starting at occDate
+        // with new values + same recurrence. If occDate is on/before startDate, just edit in place.
+        if (occDate <= tx.startDate) {
+          await callApi(`/api/transactions/${tx.id}`, { method: "PUT", body: JSON.stringify({ name: fd.name, amount: fd.amount, type: fd.type, autopay: fd.autopay, tags: fd.tags, highlight: fd.highlight, note: fd.note }) });
+        } else {
+          await callApi(`/api/transactions/${tx.id}`, { method: "PUT", body: JSON.stringify({ endDate: dayBefore(occDate) }) });
+          await callApi("/api/transactions", { method: "POST", body: JSON.stringify({ name: fd.name, amount: fd.amount, type: fd.type, recurrence: tx.recurrence, startDate: occDate, autopay: fd.autopay, tags: fd.tags, highlight: fd.highlight, note: fd.note }) });
+        }
       }
     } else if (type === "move") {
       const newDate = pending.newDate!;
       if (choice === "one") {
         await callApi("/api/overrides", { method: "POST", body: JSON.stringify({ transactionId: tx.id, occurrenceDate: occDate, movedTo: newDate }) });
       } else {
-        await callApi(`/api/transactions/${tx.id}`, { method: "PUT", body: JSON.stringify({ startDate: newDate }) });
+        // "This & future" move: cap original, create new series starting at newDate.
+        // If occDate is on/before startDate, just shift startDate.
+        if (occDate <= tx.startDate) {
+          await callApi(`/api/transactions/${tx.id}`, { method: "PUT", body: JSON.stringify({ startDate: newDate }) });
+        } else {
+          await callApi(`/api/transactions/${tx.id}`, { method: "PUT", body: JSON.stringify({ endDate: dayBefore(occDate) }) });
+          await callApi("/api/transactions", { method: "POST", body: JSON.stringify({ name: tx.name, amount: tx.amount, type: tx.type, recurrence: tx.recurrence, startDate: newDate, autopay: (tx as any).autopay ?? false, tags: (tx as any).tags ?? "", highlight: (tx as any).highlight ?? "", note: (tx as any).note ?? "" }) });
+        }
       }
     }
     await reload();
@@ -1275,7 +1306,7 @@ export default function BudgetForecast() {
             const mStart = dkey(cur.getFullYear(), cur.getMonth(), 1);
             const mEnd = dkey(cur.getFullYear(), cur.getMonth(), dim(cur.getFullYear(), cur.getMonth()));
             allTxs.forEach((tx) => {
-              const occs = getOccurrences(tx.startDate, tx.recurrence, mStart, mEnd);
+              const occs = getOccurrences(tx.startDate, tx.recurrence, mStart, mEnd, tx.endDate);
               occs.forEach((odk) => {
                 if (odk !== dk) return;
                 const ok = `${tx.id}::${odk}`;
@@ -1303,7 +1334,7 @@ export default function BudgetForecast() {
           const mStart = dkey(d.getFullYear(), d.getMonth(), 1);
           const mEnd = dkey(d.getFullYear(), d.getMonth(), dim(d.getFullYear(), d.getMonth()));
           allTxs.forEach((tx) => {
-            const occs = getOccurrences(tx.startDate, tx.recurrence, mStart, mEnd);
+            const occs = getOccurrences(tx.startDate, tx.recurrence, mStart, mEnd, tx.endDate);
             occs.forEach((odk) => {
               if (odk !== dk) return;
               const ok = `${tx.id}::${odk}`;
@@ -1341,7 +1372,7 @@ export default function BudgetForecast() {
           const mEnd = dkey(parseInt(dd.date.slice(0,4)), parseInt(dd.date.slice(5,7))-1, dim(parseInt(dd.date.slice(0,4)), parseInt(dd.date.slice(5,7))-1));
           allTxs.forEach((tx) => {
             if (tx.type !== "expense") return;
-            const occs = getOccurrences(tx.startDate, tx.recurrence, mStart, mEnd);
+            const occs = getOccurrences(tx.startDate, tx.recurrence, mStart, mEnd, tx.endDate);
             occs.forEach((odk) => {
               if (odk !== dd.date) return;
               const ok = `${tx.id}::${odk}`;
