@@ -253,6 +253,8 @@ export default function BudgetForecast() {
   const [showTags, setShowTags] = useState(false);
   const [showTagPills, setShowTagPills] = useState(false);
   const [filterTag, setFilterTag] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [showSearch, setShowSearch] = useState(false);
   const [showChart, setShowChart] = useState(false);
   const [hidePastDays, setHidePastDays] = useState(true);
   const [theme, setTheme] = useState(() => typeof window !== "undefined" ? localStorage.getItem("flowycash-theme") || "forest" : "forest");
@@ -700,7 +702,21 @@ export default function BudgetForecast() {
     setTimeout(() => setVoiceResult(""), 4000);
   }
 
-  const txMatchesFilter = (tx: any) => !filterTag || ((tx.tags || "").split(",").map((s: string) => s.trim()).includes(filterTag));
+  function fuzzyMatch(q: string, target: string): boolean {
+    if (!q) return true;
+    const ql = q.toLowerCase().trim();
+    const tl = target.toLowerCase();
+    if (tl.includes(ql)) return true;
+    // char-subsequence: every char of q must appear in target in order
+    let i = 0;
+    for (let j = 0; j < tl.length && i < ql.length; j++) if (tl[j] === ql[i]) i++;
+    return i === ql.length;
+  }
+  const txMatchesFilter = (tx: any) => {
+    if (filterTag && !((tx.tags || "").split(",").map((s: string) => s.trim()).includes(filterTag))) return false;
+    if (searchQuery.trim() && !fuzzyMatch(searchQuery, tx.name || "")) return false;
+    return true;
+  };
 
   const openPanel = (p: string) => {
     setPanel(p);
@@ -1010,6 +1026,10 @@ export default function BudgetForecast() {
           </span>
           <button onClick={nextM} className="bf-btn bf-monthnav" style={{ width: 40, height: 40, borderRadius: "50%", border: "none", background: "rgba(255,255,255,0.15)", fontSize: 22, color: th.headerText, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>›</button>
           <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
+            <button onClick={() => { setShowSearch((v) => { if (v) setSearchQuery(""); return !v; }); }} className="bf-btn" title="Search this month"
+              style={{ width: 32, height: 32, borderRadius: "50%", border: showSearch || searchQuery ? `1.5px solid ${th.accent}` : "1.5px solid rgba(255,255,255,0.3)", background: showSearch || searchQuery ? "rgba(255,255,255,0.9)" : "rgba(255,255,255,0.1)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={showSearch || searchQuery ? th.headerBg : th.headerText} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            </button>
             <button data-tour="tags" onClick={() => setShowTagPills((v) => !v)} className="bf-btn" title="Tags"
               style={{ width: 32, height: 32, borderRadius: "50%", border: showTagPills ? `1.5px solid ${th.accent}` : "1.5px solid rgba(255,255,255,0.3)", background: showTagPills ? "rgba(255,255,255,0.9)" : "rgba(255,255,255,0.1)", display: "flex", alignItems: "center", justifyContent: "center" }}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={showTagPills ? th.headerBg : th.headerText} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
@@ -1151,6 +1171,21 @@ export default function BudgetForecast() {
             style={{ padding: "6px 18px", borderRadius: 10, border: "none", background: "#92400e", color: "#fff", fontSize: 12, fontWeight: 700, whiteSpace: "nowrap" }}>
             Upgrade Pro — $9/mo
           </button>
+        </div>
+      )}
+
+      {/* Search bar */}
+      {showSearch && (
+        <div style={{ flexShrink: 0, display: "flex", alignItems: "center", gap: 8, padding: "6px 8px", marginBottom: 4, background: "#f1f5f9", borderRadius: 8, border: "1px solid #e2e8f0" }}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#64748b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input autoFocus value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} onKeyDown={(e) => { if (e.key === "Escape") { setSearchQuery(""); setShowSearch(false); } }}
+            placeholder={`Search ${MONTHS[cM]} ${cY}…`}
+            style={{ flex: 1, border: "none", background: "transparent", fontSize: 13, color: "#1e293b", outline: "none", fontFamily: "inherit" }} />
+          {(() => {
+            const matchCount = (state.transactions || []).filter((tx) => searchQuery.trim() && fuzzyMatch(searchQuery, tx.name || "")).length;
+            return searchQuery.trim() ? <span style={{ fontSize: 11, color: "#64748b" }}>{matchCount} match{matchCount === 1 ? "" : "es"}</span> : null;
+          })()}
+          <button onClick={() => { setSearchQuery(""); setShowSearch(false); }} className="bf-btn" style={{ border: "none", background: "none", color: "#94a3b8", fontSize: 14, cursor: "pointer", padding: "0 4px", fontWeight: 700 }}>×</button>
         </div>
       )}
 
