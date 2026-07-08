@@ -277,7 +277,7 @@ export interface MonthDashboard {
   low: { date: string; balance: number };
   end: { date: string; balance: number };
   negativeDaysAhead: number;
-  upcomingWeek: { name: string; date: string; amount: number; type: string }[];
+  upcomingWeek: { name: string; date: string; amount: number; type: string; running: number }[];
 }
 
 // A Monday-morning snapshot of the current month: current balance, month totals,
@@ -331,10 +331,18 @@ export function buildMonthDashboard(state: AppState, opts?: { today?: string }):
   if (low.balance === Infinity) low = { date: today, balance: currentBalance };
 
   const weekEnd = addDays(today, 7);
-  const upcomingWeek = expandOccurrences(state, today, weekEnd)
+  const weekRaw = expandOccurrences(state, today, weekEnd)
     .filter((o) => o.date >= today && o.date <= weekEnd)
-    .sort((a, b) => a.date.localeCompare(b.date))
-    .map((o) => ({ name: o.name, date: o.date, amount: o.amount, type: o.type }));
+    .sort((a, b) => a.date.localeCompare(b.date));
+  // Running balance across the week, starting from the balance entering today
+  // (currentBalance already includes today's items, so back those out first).
+  const signed = (o: Occ) => (o.type === "income" ? o.amount : -o.amount);
+  const todayNet = weekRaw.filter((o) => o.date === today).reduce((s, o) => s + signed(o), 0);
+  let run = Math.round((currentBalance - todayNet) * 100) / 100;
+  const upcomingWeek = weekRaw.map((o) => {
+    run = Math.round((run + signed(o)) * 100) / 100;
+    return { name: o.name, date: o.date, amount: o.amount, type: o.type, running: run };
+  });
 
   return {
     monthLabel: `${FULL_MONTHS[tm]} ${ty}`,
@@ -361,8 +369,8 @@ export function renderDashboardEmail(d: MonthDashboard): RenderedEmail {
     `End of month: ${fmt(d.end.balance)}`,
     d.negativeDaysAhead > 0 ? `Heads up: ${d.negativeDaysAhead} day(s) go negative this month.` : `No negative days ahead this month.`,
     ``,
-    d.upcomingWeek.length ? `This week:` : `Nothing scheduled in the next 7 days.`,
-    ...d.upcomingWeek.map((p) => `  ${friendlyDate(p.date)} — ${p.name} ${p.type === "income" ? "+" : "-"}${fmt(p.amount)}`),
+    d.upcomingWeek.length ? `This week (running balance):` : `Nothing scheduled in the next 7 days.`,
+    ...d.upcomingWeek.map((p) => `  ${friendlyDate(p.date)} — ${p.name} ${p.type === "income" ? "+" : "-"}${fmt(p.amount)}  →  ${fmt(p.running)}`),
   ].join("\n");
 
   const stat = (label: string, value: string, color: string) =>
@@ -371,9 +379,11 @@ export function renderDashboardEmail(d: MonthDashboard): RenderedEmail {
        <div style="font-size:18px;font-weight:800;color:${color};margin-top:2px;">${value}</div></td>`;
 
   const weekRows = d.upcomingWeek.length
-    ? d.upcomingWeek.map((p) => `<div style="display:flex;justify-content:space-between;padding:5px 0;font-size:13px;border-bottom:1px solid #f1f5f9;">
-        <span style="color:#334155;"><span style="color:#94a3b8;font-size:11px;">${friendlyDate(p.date)}</span>&nbsp;&nbsp;${escapeHtml(p.name)}</span>
-        <span style="font-weight:700;color:${p.type === "income" ? "#059669" : "#dc2626"};">${p.type === "income" ? "+" : "-"}${fmt(p.amount)}</span></div>`).join("")
+    ? d.upcomingWeek.map((p) => `<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;font-size:13px;border-bottom:1px solid #f1f5f9;">
+        <span style="color:#334155;flex:1;overflow:hidden;"><span style="color:#94a3b8;font-size:11px;">${friendlyDate(p.date)}</span>&nbsp;&nbsp;${escapeHtml(p.name)}</span>
+        <span style="font-weight:700;color:${p.type === "income" ? "#059669" : "#dc2626"};white-space:nowrap;">${p.type === "income" ? "+" : "-"}${fmt(p.amount)}</span>
+        <span style="width:78px;text-align:right;font-weight:700;color:${p.running < 0 ? "#dc2626" : "#334155"};font-variant-numeric:tabular-nums;white-space:nowrap;">${fmt(p.running)}</span></div>`).join("") +
+      `<div style="display:flex;justify-content:flex-end;font-size:10px;color:#94a3b8;padding-top:4px;">running balance →</div>`
     : `<div style="font-size:13px;color:#94a3b8;">Nothing scheduled in the next 7 days.</div>`;
 
   const html = `<!doctype html><html><body style="margin:0;background:#f1f5f9;padding:24px;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;">
