@@ -263,6 +263,143 @@ export function renderEmail(report: DriftReport): RenderedEmail {
   return { subject, html, text: textLines.join("\n") };
 }
 
+const FULL_MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+function dim(y: number, m: number) {
+  return new Date(y, m + 1, 0).getDate();
+}
+
+export interface MonthDashboard {
+  monthLabel: string;
+  today: string;
+  currentBalance: number;
+  totalIn: number;
+  totalOut: number;
+  low: { date: string; balance: number };
+  end: { date: string; balance: number };
+  negativeDaysAhead: number;
+  upcomingWeek: { name: string; date: string; amount: number; type: string }[];
+}
+
+// A Monday-morning snapshot of the current month: current balance, month totals,
+// projected low/end, negative days ahead, and this week's payments.
+export function buildMonthDashboard(state: AppState, opts?: { today?: string }): MonthDashboard {
+  const today = opts?.today || todayKey();
+  const { year: ty, month: tm } = pdk(today);
+  const monthStart = dkey(ty, tm, 1);
+  const monthEnd = dkey(ty, tm, dim(ty, tm));
+
+  let totalIn = 0;
+  let totalOut = 0;
+  expandOccurrences(state, monthStart, monthEnd).forEach((o) => {
+    if (o.date < monthStart || o.date > monthEnd) return;
+    if (o.type === "income") totalIn += o.amount;
+    else totalOut += o.amount;
+  });
+
+  const resets = state.balanceResets || {};
+  const pastResets = Object.keys(resets).filter((d) => d <= today).sort();
+  let anchorDate: string;
+  let anchorBal: number;
+  if (pastResets.length) {
+    anchorDate = pastResets[pastResets.length - 1];
+    anchorBal = resets[anchorDate];
+  } else {
+    const starts = (state.transactions || []).map((t) => t.startDate).filter(Boolean).sort();
+    anchorDate = starts[0] && starts[0] < today ? starts[0] : today;
+    anchorBal = state.startingBalance || 0;
+  }
+
+  const buckets = bucketByDate(state, anchorDate, monthEnd);
+  let bal = anchorBal;
+  let cur = anchorDate;
+  let currentBalance = anchorBal;
+  let endBalance = anchorBal;
+  let low = { date: today, balance: Infinity };
+  let negativeDaysAhead = 0;
+  while (cur <= monthEnd) {
+    if (resets[cur] !== undefined) bal = resets[cur];
+    bal += buckets[cur] || 0;
+    const rb = Math.round(bal * 100) / 100;
+    if (cur === today) currentBalance = rb;
+    if (cur >= today) {
+      if (rb < low.balance) low = { date: cur, balance: rb };
+      if (rb < 0) negativeDaysAhead++;
+    }
+    if (cur === monthEnd) endBalance = rb;
+    cur = addDays(cur, 1);
+  }
+  if (low.balance === Infinity) low = { date: today, balance: currentBalance };
+
+  const weekEnd = addDays(today, 7);
+  const upcomingWeek = expandOccurrences(state, today, weekEnd)
+    .filter((o) => o.date >= today && o.date <= weekEnd)
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .map((o) => ({ name: o.name, date: o.date, amount: o.amount, type: o.type }));
+
+  return {
+    monthLabel: `${FULL_MONTHS[tm]} ${ty}`,
+    today,
+    currentBalance,
+    totalIn: Math.round(totalIn),
+    totalOut: Math.round(totalOut),
+    low,
+    end: { date: monthEnd, balance: endBalance },
+    negativeDaysAhead,
+    upcomingWeek,
+  };
+}
+
+export function renderDashboardEmail(d: MonthDashboard): RenderedEmail {
+  const subject = `Flowy Cash: your week ahead — ${d.monthLabel}`;
+
+  const text = [
+    `Monday dashboard for ${d.monthLabel}:`,
+    ``,
+    `Current balance: ${fmt(d.currentBalance)}`,
+    `This month — in ${fmt(d.totalIn)}, out ${fmt(d.totalOut)}`,
+    `Projected low: ${fmt(d.low.balance)} on ${friendlyDate(d.low.date)}`,
+    `End of month: ${fmt(d.end.balance)}`,
+    d.negativeDaysAhead > 0 ? `Heads up: ${d.negativeDaysAhead} day(s) go negative this month.` : `No negative days ahead this month.`,
+    ``,
+    d.upcomingWeek.length ? `This week:` : `Nothing scheduled in the next 7 days.`,
+    ...d.upcomingWeek.map((p) => `  ${friendlyDate(p.date)} — ${p.name} ${p.type === "income" ? "+" : "-"}${fmt(p.amount)}`),
+  ].join("\n");
+
+  const stat = (label: string, value: string, color: string) =>
+    `<td style="padding:10px 12px;border:1px solid #eef2f7;border-radius:10px;">
+       <div style="font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:0.05em;">${label}</div>
+       <div style="font-size:18px;font-weight:800;color:${color};margin-top:2px;">${value}</div></td>`;
+
+  const weekRows = d.upcomingWeek.length
+    ? d.upcomingWeek.map((p) => `<div style="display:flex;justify-content:space-between;padding:5px 0;font-size:13px;border-bottom:1px solid #f1f5f9;">
+        <span style="color:#334155;"><span style="color:#94a3b8;font-size:11px;">${friendlyDate(p.date)}</span>&nbsp;&nbsp;${escapeHtml(p.name)}</span>
+        <span style="font-weight:700;color:${p.type === "income" ? "#059669" : "#dc2626"};">${p.type === "income" ? "+" : "-"}${fmt(p.amount)}</span></div>`).join("")
+    : `<div style="font-size:13px;color:#94a3b8;">Nothing scheduled in the next 7 days.</div>`;
+
+  const html = `<!doctype html><html><body style="margin:0;background:#f1f5f9;padding:24px;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;">
+  <div style="max-width:520px;margin:0 auto;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 8px 24px rgba(0,0,0,0.06);">
+    <div style="background:#065f46;padding:20px 24px;">
+      <div style="color:#d1fae5;font-size:12px;letter-spacing:0.04em;text-transform:uppercase;">Flowy Cash · ${d.monthLabel}</div>
+      <div style="color:#fff;font-size:20px;font-weight:800;margin-top:2px;">Your week ahead</div>
+    </div>
+    <div style="padding:20px 24px;">
+      <div style="font-size:12px;color:#94a3b8;">Current balance</div>
+      <div style="font-size:34px;font-weight:800;color:${d.currentBalance < 0 ? "#dc2626" : "#065f46"};">${fmt(d.currentBalance)}</div>
+      <table style="width:100%;border-collapse:separate;border-spacing:6px;margin:12px -6px;"><tr>
+        ${stat("In (mo)", fmt(d.totalIn), "#059669")}${stat("Out (mo)", fmt(d.totalOut), "#dc2626")}
+      </tr><tr>
+        ${stat("Low", fmt(d.low.balance), d.low.balance < 0 ? "#dc2626" : "#334155")}${stat("End of mo", fmt(d.end.balance), d.end.balance < 0 ? "#dc2626" : "#334155")}
+      </tr></table>
+      ${d.negativeDaysAhead > 0 ? `<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:8px 12px;font-size:12.5px;color:#991b1b;margin-bottom:12px;">${d.negativeDaysAhead} day${d.negativeDaysAhead === 1 ? "" : "s"} go negative this month — open Flowy Cash to smooth it out.</div>` : ""}
+      <div style="font-size:13px;font-weight:700;color:#1e293b;margin:6px 0 4px;">This week</div>
+      ${weekRows}
+    </div>
+    <div style="padding:0 24px 22px;color:#94a3b8;font-size:12px;">A Monday snapshot from Flowy Cash.</div>
+  </div></body></html>`;
+
+  return { subject, html, text };
+}
+
 function row(color: string, title: string, body: string) {
   return `<div style="display:flex;gap:12px;padding:12px 0;border-bottom:1px solid #f1f5f9;">
     <div style="width:10px;height:10px;border-radius:50%;background:${color};margin-top:5px;flex-shrink:0;"></div>

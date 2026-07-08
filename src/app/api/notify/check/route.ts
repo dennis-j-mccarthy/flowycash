@@ -1,8 +1,7 @@
-import { prisma } from "@/lib/prisma";
 import { NextRequest, NextResponse } from "next/server";
 import { Resend } from "resend";
 import { buildDriftReport, renderEmail } from "@/lib/notify";
-import type { AppState } from "@/lib/types";
+import { loadState } from "@/lib/load-state";
 
 // Daily drift check. Idempotent: it only reads the current forecast and, if
 // there's drift, sends a summary email — no database writes, so it's safe to
@@ -16,25 +15,6 @@ import type { AppState } from "@/lib/types";
 //
 // Env vars: RESEND_API_KEY, RESEND_FROM_EMAIL, NOTIFY_TO_EMAIL. Optional:
 // CRON_SECRET, NOTIFY_USER_ID (defaults to "default").
-
-async function loadState(userId: string): Promise<AppState> {
-  const [transactions, overrides, balanceResets, settings] = await Promise.all([
-    prisma.transaction.findMany({ where: { userId }, orderBy: { createdAt: "asc" } }),
-    prisma.override.findMany({ where: { transaction: { userId } } }),
-    prisma.balanceReset.findMany({ where: { userId } }),
-    prisma.settings.findFirst({ where: { userId } }),
-  ]);
-  const overridesMap: Record<string, (typeof overrides)[number]> = {};
-  overrides.forEach((o) => { overridesMap[`${o.transactionId}::${o.occurrenceDate}`] = o; });
-  const resetsMap: Record<string, number> = {};
-  balanceResets.forEach((r) => { resetsMap[r.date] = r.amount; });
-  return {
-    transactions: transactions as unknown as AppState["transactions"],
-    overrides: overridesMap as unknown as AppState["overrides"],
-    balanceResets: resetsMap,
-    startingBalance: settings?.startingBalance ?? 0,
-  };
-}
 
 async function handle(req: NextRequest) {
   try {
