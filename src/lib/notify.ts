@@ -63,6 +63,7 @@ interface Occ {
   occurrenceDate: string;
   amount: number; // absolute
   type: string;
+  autopay: boolean;
 }
 
 // Net signed amount bucketed by display date, applying the override layer.
@@ -94,6 +95,7 @@ function expandOccurrences(state: AppState, rStart: string, rEnd: string): Occ[]
         occurrenceDate: odk,
         amount: Math.abs(ov?.amount ?? tx.amount),
         type: ov?.type ?? tx.type,
+        autopay: !!tx.autopay,
       });
     });
   });
@@ -120,8 +122,36 @@ export interface DriftReport {
   upcomingLarge: { name: string; date: string; amount: number }[];
   overdue: { name: string; date: string; amount: number; type: string }[];
   negativeDays: { date: string; balance: number }[];
+  dip: { date: string; deficit: number; tips: string[] } | null;
   resetDivergence: { from: string; to: string; predicted: number; actual: number; diff: number } | null;
   hasFindings: boolean;
+}
+
+// Concrete ways to offset a cashflow dip on `dipDate` (balance `dipBalance`).
+// Prefers moving a movable (non-autopay) expense toward the next payday.
+function dipTips(state: AppState, dipDate: string, dipBalance: number): string[] {
+  const deficit = Math.round(Math.abs(dipBalance));
+  const occs = expandOccurrences(state, addDays(dipDate, -31), addDays(dipDate, 45));
+  const paydays = occs.filter((o) => o.type === "income" && o.amount >= 1000).map((o) => o.date).sort();
+  const nextPay = paydays.find((d) => d > dipDate);
+  const target = nextPay ? `${friendlyDate(nextPay)} (your next payday)` : `just after ${friendlyDate(dipDate)}`;
+
+  const movable = occs
+    .filter((o) => o.type === "expense" && !o.autopay && o.amount >= 50 && o.date <= dipDate)
+    .sort((a, b) => b.amount - a.amount);
+
+  const tips: string[] = [];
+  const single = movable.find((o) => o.amount >= deficit);
+  if (single) {
+    tips.push(`Push ${single.name} (${fmt(single.amount)}, ${friendlyDate(single.date)}) to ${target} — that alone covers the ${fmt(deficit)} shortfall.`);
+  } else if (movable[0]) {
+    tips.push(`Move ${movable[0].name} (${fmt(movable[0].amount)}, ${friendlyDate(movable[0].date)}) to ${target} to free up cash before the dip.`);
+  }
+  if (movable[1] && !single) {
+    tips.push(`Also consider shifting ${movable[1].name} (${fmt(movable[1].amount)}) later.`);
+  }
+  tips.push(`Or bring in / hold back about ${fmt(deficit)} before ${friendlyDate(dipDate)} — trim discretionary spending or pull income forward.`);
+  return tips.slice(0, 3);
 }
 
 interface ReportOpts {
@@ -195,8 +225,14 @@ export function buildDriftReport(state: AppState, opts?: ReportOpts): DriftRepor
     }
   }
 
+  let dip: DriftReport["dip"] = null;
+  if (negativeDays.length) {
+    const worst = negativeDays.reduce((m, d) => (d.balance < m.balance ? d : m), negativeDays[0]);
+    dip = { date: worst.date, deficit: Math.round(Math.abs(worst.balance)), tips: dipTips(state, worst.date, worst.balance) };
+  }
+
   const hasFindings = upcomingLarge.length > 0 || overdue.length > 0 || negativeDays.length > 0 || resetDivergence != null;
-  return { today, upcomingLarge, overdue, negativeDays, resetDivergence, hasFindings };
+  return { today, upcomingLarge, overdue, negativeDays, dip, resetDivergence, hasFindings };
 }
 
 export interface RenderedEmail {
@@ -224,9 +260,15 @@ export function renderEmail(report: DriftReport): RenderedEmail {
   if (report.negativeDays.length) {
     const first = report.negativeDays[0];
     const worst = report.negativeDays.reduce((m, d) => (d.balance < m.balance ? d : m), report.negativeDays[0]);
-    textLines.push(`• Your balance is forecast to go negative on ${friendlyDate(first.date)} (down to ${fmt(worst.balance)} at its lowest across ${report.negativeDays.length} day${report.negativeDays.length === 1 ? "" : "s"}).`);
-    htmlSections.push(row("#ef4444", "Forecast goes negative",
-      `Starting ${friendlyDate(first.date)}, your balance dips below zero — as low as <strong>${fmt(worst.balance)}</strong> across ${report.negativeDays.length} day${report.negativeDays.length === 1 ? "" : "s"}. Move an expense or add income before then.`));
+    const tips = report.dip?.tips || [];
+    textLines.push(`• Cashflow dip: your balance goes negative on ${friendlyDate(first.date)} (down to ${fmt(worst.balance)} across ${report.negativeDays.length} day${report.negativeDays.length === 1 ? "" : "s"}).`);
+    tips.forEach((t) => textLines.push(`    - ${t}`));
+    const tipsHtml = tips.length
+      ? `<div style="margin-top:8px;font-size:12px;font-weight:700;color:#334155;">Ways to offset it:</div>
+         <ul style="margin:4px 0 0;padding-left:18px;color:#475569;font-size:12.5px;line-height:1.5;">${tips.map((t) => `<li>${escapeHtml(t)}</li>`).join("")}</ul>`
+      : "";
+    htmlSections.push(row("#ef4444", "Cashflow dip ahead",
+      `Your balance is forecast to drop to <strong>${fmt(worst.balance)}</strong> on ${friendlyDate(worst.date)} (negative on ${report.negativeDays.length} day${report.negativeDays.length === 1 ? "" : "s"}).${tipsHtml}`));
   }
 
   if (report.overdue.length) {
