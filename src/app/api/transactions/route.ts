@@ -16,6 +16,7 @@ export async function POST(req: NextRequest) {
       recurrence: body.recurrence || "none",
       startDate: body.startDate,
       autopay: body.autopay ?? false,
+      reminder: body.reminder ?? false,
       tags: body.tags ?? "",
       highlight: body.highlight ?? "",
       note: body.note ?? "",

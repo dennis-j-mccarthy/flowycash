@@ -16,6 +16,7 @@ export async function PUT(
     if (body.endDate !== undefined) data.endDate = body.endDate;
     if (body.recurrence !== undefined) data.recurrence = body.recurrence;
     if (body.autopay !== undefined) data.autopay = body.autopay;
+    if (body.reminder !== undefined) data.reminder = body.reminder;
     if (body.tags !== undefined) data.tags = body.tags;
     if (body.highlight !== undefined) data.highlight = body.highlight;
     if (body.note !== undefined) data.note = body.note;

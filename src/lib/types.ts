@@ -7,6 +7,7 @@ export interface Transaction {
   startDate: string;
   endDate?: string | null;
   autopay: boolean;
+  reminder: boolean;
   tags: string;
   highlight: string;
   note: string;

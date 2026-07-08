@@ -2,7 +2,10 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { UserButton, useAuth } from "@clerk/nextjs";
+import { ensurePushSubscription } from "@/lib/push-client";
 import type { Transaction, OverrideData, AppState } from "@/lib/types";
+import { reconcile, type BankData } from "@/lib/reconcile";
+import { distributeDebt, simulateDistribution, type DebtPlacement } from "@/lib/debt-distribution";
 
 const DAYS = ["S", "M", "T", "W", "T", "F", "S"];
 const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -180,7 +183,7 @@ interface PendingAction {
   type: "edit" | "delete" | "move";
   tx: Transaction;
   occDate: string;
-  formData?: { name: string; amount: number; type: string; autopay?: boolean; tags?: string; highlight?: string; note?: string };
+  formData?: { name: string; amount: number; type: string; autopay?: boolean; reminder?: boolean; tags?: string; highlight?: string; note?: string };
   newDate?: string;
 }
 
@@ -197,7 +200,7 @@ async function api(url: string, opts?: RequestInit) {
 function buildDemoData(): AppState {
   let id = 0;
   const tx = (name: string, amount: number, type: string, recurrence: string, startDate: string, autopay = false, tags = "") =>
-    ({ id: `demo-${++id}`, name, amount, type, recurrence, startDate, autopay, tags, highlight: "", note: "" });
+    ({ id: `demo-${++id}`, name, amount, type, recurrence, startDate, autopay, reminder: false, tags, highlight: "", note: "" });
   const now = new Date();
   const y = now.getFullYear();
   const m = now.getMonth();
@@ -349,16 +352,23 @@ export default function BudgetForecast() {
   });
   const [shareEmail, setShareEmail] = useState("");
   const [sharedWith, setSharedWith] = useState<{ email: string }[]>([]);
-  const [snapPreview, setSnapPreview] = useState<{ balance: number; date: string; moved: { name: string; from: string; to: string; amount: number }[]; unaccounted: { name: string; amount: number; type: string; date: string }[]; imageUrl: string } | null>(null);
+  const [snapPreview, setSnapPreview] = useState<{ balance: number; date: string; moved: { name: string; from: string; to: string; amount: number }[]; unaccounted: { name: string; amount: number; type: string; date: string }[]; imageUrl?: string } | null>(null);
+  const [snapLoading, setSnapLoading] = useState(false);
+  const [snapBank, setSnapBank] = useState<BankData | null>(null);
+  const [snapThumb, setSnapThumb] = useState<string | undefined>(undefined);
   const [listening, setListening] = useState(false);
   const [voiceText, setVoiceText] = useState("");
   const [voiceResult, setVoiceResult] = useState("");
   const [monthNoteText, setMonthNoteText] = useState("");
   const [dropTgt, setDropTgt] = useState<string | null>(null);
-  const [form, setForm] = useState({ name: "", amount: "", type: "expense", recurrence: "none", date: "", autopay: false, tags: "", highlight: "", note: "" });
+  const [form, setForm] = useState({ name: "", amount: "", type: "expense", recurrence: "none", date: "", autopay: false, reminder: false, tags: "", highlight: "", note: "" });
   const [resetAmt, setResetAmt] = useState("");
   const [resetDt, setResetDt] = useState("");
   const [balInput, setBalInput] = useState("");
+  const [debtAmount, setDebtAmount] = useState("");
+  const [debtStep, setDebtStep] = useState(0);
+  const [debtChunks, setDebtChunks] = useState<DebtPlacement[]>([]);
+  const [debtName, setDebtName] = useState("Debt Repayment");
 
   const demoApi = useCallback(async (url: string, opts?: RequestInit) => {
     if (!demoState) return {};
@@ -367,7 +377,7 @@ export default function BudgetForecast() {
     let ds = { ...demoState, transactions: [...demoState.transactions], overrides: { ...demoState.overrides }, balanceResets: { ...demoState.balanceResets } };
 
     if (url === "/api/transactions" && method === "POST") {
-      ds.transactions.push({ id: `demo-${Date.now()}`, name: body.name, amount: body.amount, type: body.type, recurrence: body.recurrence || "none", startDate: body.startDate, autopay: body.autopay || false, tags: body.tags || "", highlight: body.highlight || "", note: body.note || "" });
+      ds.transactions.push({ id: `demo-${Date.now()}`, name: body.name, amount: body.amount, type: body.type, recurrence: body.recurrence || "none", startDate: body.startDate, autopay: body.autopay || false, reminder: body.reminder || false, tags: body.tags || "", highlight: body.highlight || "", note: body.note || "" });
     } else if (url.startsWith("/api/transactions/") && method === "PUT") {
       const id = url.split("/").pop()!;
       ds.transactions = ds.transactions.map((t) => t.id === id ? { ...t, ...Object.fromEntries(Object.entries(body).filter(([, v]) => v !== undefined)) } : t);
@@ -440,6 +450,8 @@ export default function BudgetForecast() {
       setIsPro(true);
       setDemo(false);
       localStorage.setItem("flowycash-demo", "false");
+      // Refresh the push subscription if permission was already granted
+      ensurePushSubscription(false).catch(() => {});
     } else {
       setIsPro(false);
     }
@@ -676,7 +688,7 @@ export default function BudgetForecast() {
       if (!name) name = type === "income" ? "Income" : "Expense";
       if (amt > 0) {
         const date = dkey(cY, cM, Math.min(day, dim(cY, cM)));
-        setForm({ name: name.charAt(0).toUpperCase() + name.slice(1), amount: String(amt), type, recurrence: "none", date, autopay: false, tags: "", highlight: "", note: "" });
+        setForm({ name: name.charAt(0).toUpperCase() + name.slice(1), amount: String(amt), type, recurrence: "none", date, autopay: false, reminder: false, tags: "", highlight: "", note: "" });
         setEditTx(null);
         setEditDate(null);
         openPanel("tx");
@@ -725,7 +737,7 @@ export default function BudgetForecast() {
   function openAdd(date: string | null) {
     setEditTx(null);
     setEditDate(null);
-    setForm({ name: "", amount: "", type: "expense", recurrence: "none", date: date || dkey(cY, cM, Math.min(new Date().getDate(), dim(cY, cM))), autopay: false, tags: "", highlight: "", note: "" });
+    setForm({ name: "", amount: "", type: "expense", recurrence: "none", date: date || dkey(cY, cM, Math.min(new Date().getDate(), dim(cY, cM))), autopay: false, reminder: false, tags: "", highlight: "", note: "" });
     setTagInput("");
     openPanel("tx");
   }
@@ -735,7 +747,7 @@ export default function BudgetForecast() {
     const ok = `${tx.id}::${od}`;
     const ov = state.overrides[ok] as OverrideData | undefined;
     const e = ov ? { ...tx, ...ov } : tx;
-    setForm({ name: e.name || tx.name, amount: String(Math.abs(e.amount ?? tx.amount)), type: e.type || tx.type, recurrence: tx.recurrence, date: od, autopay: !!(tx as any).autopay, tags: (tx as any).tags || "", highlight: (tx as any).highlight || "", note: (tx as any).note || "" });
+    setForm({ name: e.name || tx.name, amount: String(Math.abs(e.amount ?? tx.amount)), type: e.type || tx.type, recurrence: tx.recurrence, date: od, autopay: !!(tx as any).autopay, reminder: !!(tx as any).reminder, tags: (tx as any).tags || "", highlight: (tx as any).highlight || "", note: (tx as any).note || "" });
     setTagInput("");
     openPanel("tx");
   }
@@ -751,7 +763,7 @@ export default function BudgetForecast() {
       if (recurrenceChanged) {
         await callApi(`/api/transactions/${editTx.id}`, { method: "PUT", body: JSON.stringify({
           name: form.name, amount: amt, type: form.type, recurrence: form.recurrence,
-          startDate: form.date, autopay: form.autopay, tags: form.tags,
+          startDate: form.date, autopay: form.autopay, reminder: form.reminder, tags: form.tags,
           highlight: form.highlight, note: form.note,
         }) });
         if (dateChanged) {
@@ -763,14 +775,14 @@ export default function BudgetForecast() {
       }
       if (editTx.recurrence !== "none") {
         // Same recurrence type — save display properties + name directly on the base transaction
-        await callApi(`/api/transactions/${editTx.id}`, { method: "PUT", body: JSON.stringify({ name: form.name, highlight: form.highlight, autopay: form.autopay, tags: form.tags, note: form.note }) });
+        await callApi(`/api/transactions/${editTx.id}`, { method: "PUT", body: JSON.stringify({ name: form.name, highlight: form.highlight, autopay: form.autopay, reminder: form.reminder, tags: form.tags, note: form.note }) });
         const amountChanged = amt !== Math.abs(editTx.amount);
         const typeChanged = form.type !== editTx.type;
         if (dateChanged || amountChanged || typeChanged) {
           if (dateChanged) {
             setPending({ type: "move", tx: editTx, occDate: editDate!, newDate: form.date });
           } else {
-            setPending({ type: "edit", formData: { name: form.name, amount: amt, type: form.type, autopay: form.autopay, tags: form.tags, highlight: form.highlight, note: form.note }, tx: editTx, occDate: editDate! });
+            setPending({ type: "edit", formData: { name: form.name, amount: amt, type: form.type, autopay: form.autopay, reminder: form.reminder, tags: form.tags, highlight: form.highlight, note: form.note }, tx: editTx, occDate: editDate! });
           }
           setRecurPrompt(true);
           setPanel(null);
@@ -787,7 +799,7 @@ export default function BudgetForecast() {
         return;
       }
       // Non-recurring → non-recurring: update fields + move if date changed
-      const body: Record<string, unknown> = { name: form.name, amount: amt, type: form.type, autopay: form.autopay, tags: form.tags, highlight: form.highlight, note: form.note };
+      const body: Record<string, unknown> = { name: form.name, amount: amt, type: form.type, autopay: form.autopay, reminder: form.reminder, tags: form.tags, highlight: form.highlight, note: form.note };
       if (dateChanged) body.startDate = form.date;
       await callApi(`/api/transactions/${editTx.id}`, { method: "PUT", body: JSON.stringify(body) });
       if (dateChanged) {
@@ -799,7 +811,7 @@ export default function BudgetForecast() {
         });
       }
     } else {
-      await callApi("/api/transactions", { method: "POST", body: JSON.stringify({ name: form.name, amount: amt, type: form.type, recurrence: form.recurrence, startDate: form.date, autopay: form.autopay, tags: form.tags, highlight: form.highlight, note: form.note }) });
+      await callApi("/api/transactions", { method: "POST", body: JSON.stringify({ name: form.name, amount: amt, type: form.type, recurrence: form.recurrence, startDate: form.date, autopay: form.autopay, reminder: form.reminder, tags: form.tags, highlight: form.highlight, note: form.note }) });
     }
     await reload();
     setPanel(null);
@@ -851,10 +863,10 @@ export default function BudgetForecast() {
         // "This & future": cap original at day-before occDate, create new tx starting at occDate
         // with new values + same recurrence. If occDate is on/before startDate, just edit in place.
         if (occDate <= tx.startDate) {
-          await callApi(`/api/transactions/${tx.id}`, { method: "PUT", body: JSON.stringify({ name: fd.name, amount: fd.amount, type: fd.type, autopay: fd.autopay, tags: fd.tags, highlight: fd.highlight, note: fd.note }) });
+          await callApi(`/api/transactions/${tx.id}`, { method: "PUT", body: JSON.stringify({ name: fd.name, amount: fd.amount, type: fd.type, autopay: fd.autopay, reminder: fd.reminder, tags: fd.tags, highlight: fd.highlight, note: fd.note }) });
         } else {
           await callApi(`/api/transactions/${tx.id}`, { method: "PUT", body: JSON.stringify({ endDate: dayBefore(occDate) }) });
-          await callApi("/api/transactions", { method: "POST", body: JSON.stringify({ name: fd.name, amount: fd.amount, type: fd.type, recurrence: tx.recurrence, startDate: occDate, autopay: fd.autopay, tags: fd.tags, highlight: fd.highlight, note: fd.note }) });
+          await callApi("/api/transactions", { method: "POST", body: JSON.stringify({ name: fd.name, amount: fd.amount, type: fd.type, recurrence: tx.recurrence, startDate: occDate, autopay: fd.autopay, reminder: fd.reminder, tags: fd.tags, highlight: fd.highlight, note: fd.note }) });
         }
       }
     } else if (type === "move") {
@@ -868,7 +880,7 @@ export default function BudgetForecast() {
           await callApi(`/api/transactions/${tx.id}`, { method: "PUT", body: JSON.stringify({ startDate: newDate }) });
         } else {
           await callApi(`/api/transactions/${tx.id}`, { method: "PUT", body: JSON.stringify({ endDate: dayBefore(occDate) }) });
-          await callApi("/api/transactions", { method: "POST", body: JSON.stringify({ name: tx.name, amount: tx.amount, type: tx.type, recurrence: tx.recurrence, startDate: newDate, autopay: (tx as any).autopay ?? false, tags: (tx as any).tags ?? "", highlight: (tx as any).highlight ?? "", note: (tx as any).note ?? "" }) });
+          await callApi("/api/transactions", { method: "POST", body: JSON.stringify({ name: tx.name, amount: tx.amount, type: tx.type, recurrence: tx.recurrence, startDate: newDate, autopay: (tx as any).autopay ?? false, reminder: (tx as any).reminder ?? false, tags: (tx as any).tags ?? "", highlight: (tx as any).highlight ?? "", note: (tx as any).note ?? "" }) });
         }
       }
     }
@@ -885,6 +897,70 @@ export default function BudgetForecast() {
     setResetAmt("");
   }
 
+  function fileToBase64(file: File): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(String(r.result));
+      r.onerror = () => reject(new Error("read failed"));
+      r.readAsDataURL(file);
+    });
+  }
+
+  function openResetPanel(dateKey: string) {
+    setResetDt(dateKey);
+    setResetAmt("");
+    setSnapBank(null);
+    setSnapThumb(undefined);
+    openPanel("reset");
+  }
+
+  // Merge freshly-parsed bank data into the accumulator so an accounts screenshot,
+  // transaction screenshots, and a CSV can all feed one reconciliation pass.
+  async function addBankSource(fetchBank: () => Promise<BankData>, thumb?: string) {
+    setSnapLoading(true);
+    try {
+      const parsed = await fetchBank();
+      setSnapBank((prev) => ({
+        accounts: [...(prev?.accounts || []), ...(parsed.accounts || [])],
+        transactions: [...(prev?.transactions || []), ...(parsed.transactions || [])],
+      }));
+      if (thumb) setSnapThumb((prev) => prev || thumb);
+    } catch {
+      setShareMsg("Couldn't read that file — try another screenshot or CSV");
+      setTimeout(() => setShareMsg(""), 3500);
+    } finally {
+      setSnapLoading(false);
+    }
+  }
+
+  async function onSnapImages(files: FileList) {
+    const arr = Array.from(files).slice(0, 6);
+    if (!arr.length) return;
+    const previewUrl = URL.createObjectURL(arr[0]);
+    await addBankSource(async () => {
+      const images = await Promise.all(arr.map(async (f) => ({ base64: await fileToBase64(f), mediaType: f.type || "image/png" })));
+      const res = await api("/api/reconcile/image", { method: "POST", body: JSON.stringify({ images }) });
+      if (res.error) throw new Error(res.error);
+      return res as BankData;
+    }, previewUrl);
+  }
+
+  async function onSnapCsv(file: File) {
+    const text = await file.text();
+    await addBankSource(async () => {
+      const res = await api("/api/reconcile/csv", { method: "POST", body: JSON.stringify({ csv: text }) });
+      if (res.error) throw new Error(res.error);
+      return res as BankData;
+    });
+  }
+
+  function reviewSnap() {
+    if (!snapBank) return;
+    const result = reconcile(snapBank, state);
+    setSnapPreview({ ...result, imageUrl: snapThumb });
+    setPanel(null);
+  }
+
   async function handleBalSave() {
     const v = parseFloat(balInput);
     if (isNaN(v)) return;
@@ -896,6 +972,20 @@ export default function BudgetForecast() {
   async function deleteReset(date: string) {
     await callApi(`/api/balance-resets/${date}`, { method: "DELETE" });
     await reload();
+  }
+
+  async function handleDebtConfirm() {
+    const chunks = debtChunks.filter((c) => c.amount > 0 && c.date);
+    if (!chunks.length) return;
+    for (const c of chunks) {
+      await callApi("/api/transactions", { method: "POST", body: JSON.stringify({ name: debtName || "Debt Repayment", amount: c.amount, type: "expense", recurrence: "none", startDate: c.date, tags: "debt" }) });
+    }
+    await reload();
+    setExpandedDays((prev) => { const next = new Set(prev); chunks.forEach((c) => next.add(c.date)); return next; });
+    setPanel(null);
+    setDebtStep(0);
+    setDebtAmount("");
+    setDebtChunks([]);
   }
 
   async function handleTouchDrop(targetDate: string) {
@@ -979,6 +1069,7 @@ export default function BudgetForecast() {
     * { box-sizing: border-box; margin: 0; }
     @keyframes panelIn { from { opacity:0; transform:translateY(-6px); } to { opacity:1; transform:translateY(0); } }
     @keyframes pulse { 0%,100% { box-shadow: 0 0 0 0 rgba(239,68,68,0.4); } 50% { box-shadow: 0 0 0 8px rgba(239,68,68,0); } }
+    @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
     .bf-btn { transition: all 0.12s ease; cursor: pointer; }
     .bf-btn:hover { transform: translateY(-1px); }
     .bf-btn:active { transform: translateY(0); }
@@ -1049,6 +1140,10 @@ export default function BudgetForecast() {
             <button data-tour="dashboard" onClick={() => setShowDashboard(true)} className="bf-btn" title="Dashboard"
               style={{ width: 32, height: 32, borderRadius: "50%", border: "1.5px solid rgba(255,255,255,0.3)", background: "rgba(255,255,255,0.1)", display: "flex", alignItems: "center", justifyContent: "center" }}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={th.headerText} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+            </button>
+            <button onClick={() => { setDebtAmount(""); setDebtChunks([]); setDebtName("Debt Repayment"); setDebtStep(0); openPanel("debt-distribution"); }} className="bf-btn" title="Distribute a debt"
+              style={{ width: 32, height: 32, borderRadius: "50%", border: "1.5px solid rgba(255,255,255,0.3)", background: "rgba(255,255,255,0.1)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={th.headerText} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={TAG_SVG.debt} /></svg>
             </button>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -2055,6 +2150,24 @@ export default function BudgetForecast() {
                   </span>
                 </label>
               )}
+              <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", padding: "4px 0" }}>
+                <div onClick={async () => {
+                    const next = !form.reminder;
+                    setForm({ ...form, reminder: next });
+                    if (next && !demo) {
+                      const status = await ensurePushSubscription(true);
+                      if (status === "denied") alert("Notifications are blocked for flowycash.com. Enable them in your browser or device settings to receive reminders.");
+                      else if (status === "unsupported") alert("This browser doesn't support notifications. On iPhone, add FlowyCash to your Home Screen first (Share > Add to Home Screen), then enable the reminder from there.");
+                    }
+                  }}
+                  style={{ width: 36, height: 20, borderRadius: 10, background: form.reminder ? C.blueDark : "#d1d5db", position: "relative", transition: "background 0.15s", cursor: "pointer" }}>
+                  <div style={{ width: 16, height: 16, borderRadius: "50%", background: "#fff", position: "absolute", top: 2, left: form.reminder ? 18 : 2, transition: "left 0.15s", boxShadow: "0 1px 3px rgba(0,0,0,0.15)" }} />
+                </div>
+                <span style={{ fontSize: 13, color: "#64748b", fontWeight: 500, display: "flex", alignItems: "center", gap: 5 }}>
+                  Remind me at 9am day of
+                  <svg width="11" height="12" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.7 }}><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9 M13.73 21a2 2 0 0 1-3.46 0" /></svg>
+                </span>
+              </label>
               <div>
                 <label style={{ fontSize: 12, fontWeight: 600, color: "#64748b", display: "block", marginBottom: 6, letterSpacing: "0.02em" }}>Highlight</label>
                 <div style={{ display: "flex", gap: 6 }}>
@@ -2166,7 +2279,13 @@ export default function BudgetForecast() {
             <div style={{ padding: "20px 24px" }}>
               {/* Screenshot thumbnail */}
               <div style={{ display: "flex", gap: 16, marginBottom: 20, padding: "14px", background: "#f8fafc", borderRadius: 12, border: "1px solid #e2e8f0" }}>
-                <img src={snapPreview.imageUrl} alt="Bank screenshot" style={{ width: 80, height: 80, objectFit: "cover", borderRadius: 8, border: "1px solid #e2e8f0" }} />
+                {snapPreview.imageUrl ? (
+                  <img src={snapPreview.imageUrl} alt="Bank screenshot" style={{ width: 80, height: 80, objectFit: "cover", borderRadius: 8, border: "1px solid #e2e8f0" }} />
+                ) : (
+                  <div style={{ width: 80, height: 80, borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke={th.headerBg} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                  </div>
+                )}
                 <div>
                   <div style={{ fontSize: 13, color: "#64748b", marginBottom: 4 }}>Detected bank balance</div>
                   <div style={{ fontSize: 28, fontWeight: 800, color: th.headerBg, fontVariantNumeric: "tabular-nums" }}>{fmt(snapPreview.balance)}</div>
@@ -2262,47 +2381,59 @@ export default function BudgetForecast() {
               <button onClick={() => setPanel(null)} className="bf-btn" style={{ border: "none", background: "none", fontSize: 22, color: "#94a3b8", cursor: "pointer", padding: "2px 6px" }}>×</button>
             </div>
             <p style={{ fontSize: 14, color: "#64748b", marginBottom: 20, lineHeight: 1.5 }}>
-              Snap your forecast to reality — set the actual balance for <strong>{friendlyDate(resetDt)}</strong>.
+              Snap your forecast to reality — set the actual balance for <strong>{friendlyDate(resetDt)}</strong>, or add bank screenshots and/or a CSV below and let us reconcile.
             </p>
             <div style={{ marginBottom: 16 }}>
               <label style={{ fontSize: 12, fontWeight: 600, color: "#64748b", display: "block", marginBottom: 6 }}>Actual balance</label>
               <input autoFocus type="number" step="0.01" value={resetAmt} onChange={(e) => setResetAmt(e.target.value)} placeholder="0.00" className="bf-input" style={{ fontSize: 18, padding: "14px 16px" }} />
             </div>
+            <button onClick={handleResetSave} className="bf-btn" style={{ width: "100%", padding: "14px", borderRadius: 12, border: "none", background: C.blueDark, color: "#fff", fontSize: 15, fontWeight: 600, marginBottom: 8 }}>Apply reset</button>
             <div style={{ display: "flex", gap: 8, marginBottom: 4 }}>
-              <button onClick={handleResetSave} className="bf-btn" style={{ flex: 1, padding: "14px", borderRadius: 12, border: "none", background: C.blueDark, color: "#fff", fontSize: 15, fontWeight: 600 }}>Apply reset</button>
-              <label className="bf-btn" style={{ flex: 1, padding: "14px", borderRadius: 12, border: `1.5px solid ${th.accent}`, background: th.totalBg, color: th.headerBg, fontSize: 14, fontWeight: 600, cursor: "pointer", textAlign: "center", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+              <label className="bf-btn" style={{ flex: 1, padding: "12px", borderRadius: 12, border: `1.5px solid ${th.accent}`, background: th.totalBg, color: th.headerBg, fontSize: 13, fontWeight: 600, cursor: snapLoading ? "wait" : "pointer", textAlign: "center", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, opacity: snapLoading ? 0.6 : 1 }}>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
                 Snap from Photo
-                <input type="file" accept="image/*" capture="environment" hidden onChange={(e) => {
+                <input type="file" accept="image/*" multiple hidden disabled={snapLoading} onChange={async (e) => {
+                  const files = e.target.files;
+                  if (files && files.length) await onSnapImages(files);
+                  e.target.value = "";
+                }} />
+              </label>
+              <label className="bf-btn" style={{ flex: 1, padding: "12px", borderRadius: 12, border: `1.5px solid ${th.accent}`, background: th.totalBg, color: th.headerBg, fontSize: 13, fontWeight: 600, cursor: snapLoading ? "wait" : "pointer", textAlign: "center", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, opacity: snapLoading ? 0.6 : 1 }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/></svg>
+                Import CSV
+                <input type="file" accept=".csv" hidden disabled={snapLoading} onChange={async (e) => {
                   const file = e.target.files?.[0];
-                  if (!file) return;
-                  const url = URL.createObjectURL(file);
-                  // Simulate OCR/analysis with fake data for demo
-                  // In production this would call an AI vision API
-                  const todayD = new Date();
-                  const todayStr = dkey(todayD.getFullYear(), todayD.getMonth(), todayD.getDate());
-
-                  // Find future items that already transpired (before today but scheduled after)
-                  const moved: { name: string; from: string; to: string; amount: number }[] = [];
-                  const unaccounted: { name: string; amount: number; type: string; date: string }[] = [];
-
-                  // Fake demo data to show the UI
-                  const fakeBalance = 3247;
-                  moved.push(
-                    { name: "Geico", from: "2026-04-12", to: todayStr, amount: 203 },
-                    { name: "Netflix", from: "2026-04-30", to: "2026-04-08", amount: 20 },
-                  );
-                  unaccounted.push(
-                    { name: "ATM Withdrawal", amount: 60, type: "expense", date: "2026-04-07" },
-                    { name: "Venmo from Jake", amount: 45, type: "income", date: "2026-04-09" },
-                  );
-
-                  setSnapPreview({ balance: fakeBalance, date: todayStr, moved, unaccounted, imageUrl: url });
-                  setPanel(null);
+                  if (file) await onSnapCsv(file);
                   e.target.value = "";
                 }} />
               </label>
             </div>
+            <div style={{ display: "flex", alignItems: "flex-start", gap: 6, marginTop: 8, fontSize: 11, color: "#94a3b8", lineHeight: 1.4 }}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 1 }}><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+              <span>Screenshots and CSVs are sent to be read by AI (Anthropic Claude) to extract your balance and transactions. The app doesn&apos;t save the uploaded file itself.</span>
+            </div>
+            {snapLoading && (
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, marginTop: 10, fontSize: 13, color: "#64748b" }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#64748b" strokeWidth="2" strokeLinecap="round" style={{ animation: "spin 0.8s linear infinite" }}><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+                Reading your statement…
+              </div>
+            )}
+            {snapBank && !snapLoading && (() => {
+              const nAcc = snapBank.accounts?.length || 0;
+              const nTx = snapBank.transactions?.length || 0;
+              const parts = [nAcc ? `${nAcc} account${nAcc === 1 ? "" : "s"}` : "", nTx ? `${nTx} transaction${nTx === 1 ? "" : "s"}` : ""].filter(Boolean);
+              return (
+                <div style={{ marginTop: 10, padding: "10px 12px", background: th.totalBg, border: `1px solid ${th.accent}55`, borderRadius: 10 }}>
+                  <div style={{ fontSize: 12.5, color: th.headerBg, fontWeight: 600, marginBottom: 8 }}>
+                    Detected {parts.length ? parts.join(" + ") : "nothing yet"}. Add more sources or review.
+                  </div>
+                  <button onClick={reviewSnap} disabled={!nAcc && !nTx} className="bf-btn"
+                    style={{ width: "100%", padding: "12px", borderRadius: 10, border: "none", background: nAcc || nTx ? th.headerBg : "#cbd5e1", color: "#fff", fontSize: 14, fontWeight: 700 }}>
+                    Review reconciliation →
+                  </button>
+                </div>
+              );
+            })()}
             {Object.keys(state.balanceResets || {}).length > 0 && (
               <div style={{ marginTop: 20, paddingTop: 16, borderTop: "1px solid #e2e8f0" }}>
                 <div style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", color: "#94a3b8", marginBottom: 8 }}>Active resets</div>
@@ -2317,6 +2448,92 @@ export default function BudgetForecast() {
           </div>
         </div>
       )}
+
+      {/* Debt Distribution Wizard */}
+      {panel === "debt-distribution" && (() => {
+        const debtTotal = Math.round(debtChunks.reduce((s, c) => s + (c.amount || 0), 0) * 100) / 100;
+        const debtMin = simulateDistribution(data, debtChunks);
+        const unsafe = debtMin < 0;
+        return (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, animation: "panelIn 0.18s ease" }}
+            onClick={(e) => { if (e.target === e.currentTarget) setPanel(null); }}>
+            <div style={{ background: "#fff", borderRadius: 20, padding: "28px 28px 24px", width: 460, maxWidth: "92vw", maxHeight: "88vh", overflow: "auto", boxShadow: "0 20px 60px rgba(0,0,0,0.15)" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                <span style={{ fontSize: 20, fontWeight: 700, letterSpacing: "-0.02em", display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ color: th.headerBg, display: "flex" }}><TagIconSvg tag="debt" size={18} /></span>
+                  Distribute a Debt
+                </span>
+                <button onClick={() => setPanel(null)} className="bf-btn" style={{ border: "none", background: "none", fontSize: 22, color: "#94a3b8", cursor: "pointer", padding: "2px 6px" }}>×</button>
+              </div>
+
+              {debtStep === 0 && (
+                <>
+                  <p style={{ fontSize: 14, color: "#64748b", marginBottom: 20, lineHeight: 1.5 }}>
+                    Enter a lump-sum debt to repay. We&apos;ll spread it across upcoming paydays so no day in {MONTHS[cM]} dips below zero.
+                  </p>
+                  <div style={{ marginBottom: 16 }}>
+                    <label style={{ fontSize: 12, fontWeight: 600, color: "#64748b", display: "block", marginBottom: 6 }}>Amount to distribute</label>
+                    <input autoFocus type="number" step="0.01" value={debtAmount} onChange={(e) => setDebtAmount(e.target.value)} placeholder="0.00" className="bf-input" style={{ fontSize: 18, padding: "14px 16px" }}
+                      onKeyDown={(e) => { if (e.key === "Enter") { const amt = parseFloat(debtAmount); if (amt > 0) { setDebtChunks(distributeDebt(amt, data)); setDebtStep(1); } } }} />
+                  </div>
+                  <button onClick={() => { const amt = parseFloat(debtAmount); if (amt > 0) { setDebtChunks(distributeDebt(amt, data)); setDebtStep(1); } }}
+                    disabled={!(parseFloat(debtAmount) > 0)} className="bf-btn"
+                    style={{ width: "100%", padding: "14px", borderRadius: 12, border: "none", background: parseFloat(debtAmount) > 0 ? th.headerBg : "#cbd5e1", color: "#fff", fontSize: 15, fontWeight: 600, cursor: parseFloat(debtAmount) > 0 ? "pointer" : "not-allowed" }}>
+                    Propose a plan
+                  </button>
+                </>
+              )}
+
+              {debtStep === 1 && (
+                <>
+                  <p style={{ fontSize: 13, color: "#64748b", marginBottom: 14, lineHeight: 1.5 }}>
+                    Adjust the dates or amounts, then confirm. Each chunk becomes a one-off <strong>debt</strong> expense.
+                  </p>
+                  <div style={{ marginBottom: 14 }}>
+                    <label style={{ fontSize: 12, fontWeight: 600, color: "#64748b", display: "block", marginBottom: 6 }}>Label</label>
+                    <input value={debtName} onChange={(e) => setDebtName(e.target.value)} className="bf-input" placeholder="Debt Repayment" />
+                  </div>
+                  {debtChunks.length === 0 && (
+                    <div style={{ padding: "12px 14px", background: "#fff7ed", border: "1px solid #fed7aa", borderRadius: 10, fontSize: 13, color: "#9a3412", marginBottom: 14 }}>
+                      No upcoming dates left this month to place a repayment. Move to a future month and try again.
+                    </div>
+                  )}
+                  {debtChunks.map((c, i) => (
+                    <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                      <input type="date" value={c.date} onChange={(e) => setDebtChunks((prev) => prev.map((p, j) => j === i ? { ...p, date: e.target.value } : p))}
+                        className="bf-input" style={{ flex: 1, padding: "10px 12px", fontSize: 13 }} />
+                      <div style={{ position: "relative", width: 120 }}>
+                        <span style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "#94a3b8", fontSize: 13 }}>$</span>
+                        <input type="number" step="0.01" value={c.amount} onChange={(e) => setDebtChunks((prev) => prev.map((p, j) => j === i ? { ...p, amount: parseFloat(e.target.value) || 0 } : p))}
+                          className="bf-input" style={{ padding: "10px 12px 10px 20px", fontSize: 13, fontVariantNumeric: "tabular-nums" }} />
+                      </div>
+                      <button onClick={() => setDebtChunks((prev) => prev.filter((_, j) => j !== i))} className="bf-btn" title="Remove"
+                        style={{ border: "none", background: "none", color: "#94a3b8", fontSize: 18, cursor: "pointer", padding: "0 4px", flexShrink: 0 }}>×</button>
+                    </div>
+                  ))}
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 12, paddingTop: 12, borderTop: "1px solid #f1f5f9", fontSize: 14 }}>
+                    <span style={{ color: "#64748b" }}>Total distributed</span>
+                    <span style={{ fontWeight: 700, fontVariantNumeric: "tabular-nums", color: "#1e293b" }}>{fmt(debtTotal)}</span>
+                  </div>
+                  {unsafe && (
+                    <div style={{ display: "flex", gap: 8, padding: "10px 12px", background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 10, fontSize: 12.5, color: "#991b1b", marginTop: 12, lineHeight: 1.4 }}>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 1 }}><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                      <span>This plan takes your lowest projected balance to <strong>{fmt(debtMin)}</strong>. Push some dates later, lower a chunk, or repay less to stay above zero.</span>
+                    </div>
+                  )}
+                  <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
+                    <button onClick={() => setDebtStep(0)} className="bf-btn" style={{ padding: "12px 18px", borderRadius: 12, border: "1px solid #e2e8f0", background: "#fff", color: "#64748b", fontSize: 14, fontWeight: 600 }}>Back</button>
+                    <button onClick={handleDebtConfirm} disabled={debtChunks.filter((c) => c.amount > 0 && c.date).length === 0} className="bf-btn"
+                      style={{ flex: 1, padding: "12px", borderRadius: 12, border: "none", background: debtChunks.some((c) => c.amount > 0 && c.date) ? th.headerBg : "#cbd5e1", color: "#fff", fontSize: 15, fontWeight: 700 }}>
+                      Create {debtChunks.filter((c) => c.amount > 0 && c.date).length} transaction{debtChunks.filter((c) => c.amount > 0 && c.date).length === 1 ? "" : "s"}
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Balance Panel */}
       {panel === "bal" && (
@@ -2439,7 +2656,7 @@ export default function BudgetForecast() {
                       ))}
                       {(!dd || dd.transactions.length === 0) && <div style={{ color: "#cbd5e1", fontSize: 12, padding: "8px 0" }}>No transactions</div>}
                     </div>
-                    <div onClick={(e) => { e.stopPropagation(); setResetDt(key); setResetAmt(""); openPanel("reset"); }}
+                    <div onClick={(e) => { e.stopPropagation(); openResetPanel(key); }}
                       style={{ flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 10px", background: th.totalBg, borderTop: `1px solid ${th.totalBorder}`, cursor: "pointer" }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
                         {dd && dd.balance < 0 && <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z"/></svg>}
@@ -2503,8 +2720,8 @@ export default function BudgetForecast() {
                         )}
                         <div style={{ display: "flex", alignItems: "center", gap: 2, marginLeft: "auto" }}>
                           {di === 0 && <span onClick={(e) => { e.stopPropagation(); setZoomWeek(wi); }} className="cell-plus" title="Week view" style={{ cursor: "pointer", opacity: 0, display: "flex", alignItems: "center" }}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></span>}
-                          <span onClick={(e) => { e.stopPropagation(); setEditTx(null); setEditDate(null); setForm({ name: "", amount: "", type: "expense", recurrence: "none", date: key, autopay: false, tags: "", highlight: "", note: "" }); setTagInput(""); openPanel("tx"); }} className="cell-plus cell-addbtn" title="Add expense" style={{ width: 18, height: 18, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", fontSize: 13, fontWeight: 800, color: C.redDark, lineHeight: 1, opacity: 0, transition: "all 0.12s" }}>−</span>
-                          <span onClick={(e) => { e.stopPropagation(); setEditTx(null); setEditDate(null); setForm({ name: "", amount: "", type: "income", recurrence: "none", date: key, autopay: false, tags: "", highlight: "", note: "" }); setTagInput(""); openPanel("tx"); }} className="cell-plus cell-addbtn" title="Add income" style={{ width: 18, height: 18, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", fontSize: 13, fontWeight: 800, color: C.greenDark, lineHeight: 1, opacity: 0, transition: "all 0.12s" }}>+</span>
+                          <span onClick={(e) => { e.stopPropagation(); setEditTx(null); setEditDate(null); setForm({ name: "", amount: "", type: "expense", recurrence: "none", date: key, autopay: false, reminder: false, tags: "", highlight: "", note: "" }); setTagInput(""); openPanel("tx"); }} className="cell-plus cell-addbtn" title="Add expense" style={{ width: 18, height: 18, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", fontSize: 13, fontWeight: 800, color: C.redDark, lineHeight: 1, opacity: 0, transition: "all 0.12s" }}>−</span>
+                          <span onClick={(e) => { e.stopPropagation(); setEditTx(null); setEditDate(null); setForm({ name: "", amount: "", type: "income", recurrence: "none", date: key, autopay: false, reminder: false, tags: "", highlight: "", note: "" }); setTagInput(""); openPanel("tx"); }} className="cell-plus cell-addbtn" title="Add income" style={{ width: 18, height: 18, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", fontSize: 13, fontWeight: 800, color: C.greenDark, lineHeight: 1, opacity: 0, transition: "all 0.12s" }}>+</span>
                         </div>
                       </div>
                       {day === 1 && carryOver !== 0 && (
@@ -2536,7 +2753,7 @@ export default function BudgetForecast() {
                         ))}
                       </div>
                     </div>
-                    <div onClick={(e) => { e.stopPropagation(); setResetDt(key); setResetAmt(""); openPanel("reset"); }}
+                    <div onClick={(e) => { e.stopPropagation(); openResetPanel(key); }}
                       style={{ flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 4, padding: "4px 6px", background: th.totalBg, borderTop: `1px solid ${th.totalBorder}`, cursor: "pointer" }}
                       title="Click to set balance reset">
                       <div style={{ display: "flex", alignItems: "center", gap: 3, marginRight: "auto" }}>
