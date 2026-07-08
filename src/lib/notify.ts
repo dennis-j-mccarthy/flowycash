@@ -117,6 +117,7 @@ function forecastBalanceAt(state: AppState, fromDate: string, fromBal: number, t
 
 export interface DriftReport {
   today: string;
+  upcomingLarge: { name: string; date: string; amount: number }[];
   overdue: { name: string; date: string; amount: number; type: string }[];
   negativeDays: { date: string; balance: number }[];
   resetDivergence: { from: string; to: string; predicted: number; actual: number; diff: number } | null;
@@ -126,6 +127,8 @@ export interface DriftReport {
 interface ReportOpts {
   today?: string;
   horizonDays?: number;
+  largeMin?: number;
+  leadDays?: number;
 }
 
 // Compare the current forecast against the last balance reset and surface drift:
@@ -133,7 +136,16 @@ interface ReportOpts {
 export function buildDriftReport(state: AppState, opts?: ReportOpts): DriftReport {
   const today = opts?.today || todayKey();
   const horizon = opts?.horizonDays ?? 60;
+  const largeMin = opts?.largeMin ?? 300;
+  const leadDays = opts?.leadDays ?? 3;
   const resets = state.balanceResets || {};
+
+  // --- Large payments coming due within the lead window ---
+  const leadEnd = addDays(today, leadDays);
+  const upcomingLarge = expandOccurrences(state, addDays(today, -3), addDays(leadEnd, 3))
+    .filter((o) => o.type === "expense" && o.amount >= largeMin && o.date >= today && o.date <= leadEnd)
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .map((o) => ({ name: o.name, date: o.date, amount: o.amount }));
   const resetDates = Object.keys(resets).sort();
   const pastResets = resetDates.filter((d) => d <= today);
   const lastResetDate = pastResets.length ? pastResets[pastResets.length - 1] : "";
@@ -183,8 +195,8 @@ export function buildDriftReport(state: AppState, opts?: ReportOpts): DriftRepor
     }
   }
 
-  const hasFindings = overdue.length > 0 || negativeDays.length > 0 || resetDivergence != null;
-  return { today, overdue, negativeDays, resetDivergence, hasFindings };
+  const hasFindings = upcomingLarge.length > 0 || overdue.length > 0 || negativeDays.length > 0 || resetDivergence != null;
+  return { today, upcomingLarge, overdue, negativeDays, resetDivergence, hasFindings };
 }
 
 export interface RenderedEmail {
@@ -199,6 +211,15 @@ export function renderEmail(report: DriftReport): RenderedEmail {
   const subject = "Flowy Cash: heads up";
   const textLines: string[] = ["Here's what stood out in your forecast:", ""];
   const htmlSections: string[] = [];
+
+  if (report.upcomingLarge.length) {
+    const total = report.upcomingLarge.reduce((s, p) => s + p.amount, 0);
+    textLines.push(`• Large payment${report.upcomingLarge.length === 1 ? "" : "s"} coming due: ` +
+      report.upcomingLarge.map((p) => `${p.name} (${fmt(p.amount)}, ${friendlyDate(p.date)})`).join("; ") + ".");
+    const items = report.upcomingLarge.map((p) => `<li>${escapeHtml(p.name)} — <strong>${fmt(p.amount)}</strong> due ${friendlyDate(p.date)}</li>`).join("");
+    htmlSections.push(row("#7c3aed", `${report.upcomingLarge.length} large payment${report.upcomingLarge.length === 1 ? "" : "s"} due soon (${fmt(total)})`,
+      `Make sure these are covered:<ul style="margin:8px 0 0;padding-left:18px;color:#334155;">${items}</ul>`));
+  }
 
   if (report.negativeDays.length) {
     const first = report.negativeDays[0];

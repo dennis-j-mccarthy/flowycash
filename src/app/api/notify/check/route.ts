@@ -47,16 +47,22 @@ async function handle(req: NextRequest) {
 
     const userId = req.nextUrl.searchParams.get("userId") || process.env.NOTIFY_USER_ID || "default";
     const state = await loadState(userId);
-    const report = buildDriftReport(state);
+    const report = buildDriftReport(state, {
+      largeMin: Number(process.env.NOTIFY_LARGE_MIN) || 300,
+      leadDays: Number(process.env.NOTIFY_LEAD_DAYS) || 3,
+    });
     const email = renderEmail(report);
 
-    if (!report.hasFindings) {
+    // Allow forcing a send (e.g. a test) even when there are no findings.
+    const force = req.nextUrl.searchParams.get("force") === "1";
+    if (!report.hasFindings && !force) {
       return NextResponse.json({ sent: false, reason: "no findings", report });
     }
 
-    const to = process.env.NOTIFY_TO_EMAIL;
+    // NOTIFY_TO_EMAIL may be a comma-separated list of recipients.
+    const to = (process.env.NOTIFY_TO_EMAIL || "").split(",").map((s) => s.trim()).filter(Boolean);
     const from = process.env.RESEND_FROM_EMAIL;
-    if (!process.env.RESEND_API_KEY || !to || !from) {
+    if (!process.env.RESEND_API_KEY || to.length === 0 || !from) {
       // Nothing to send with — return the rendered content so it can still be previewed.
       return NextResponse.json({ sent: false, reason: "resend not configured", report, email: { subject: email.subject, text: email.text } });
     }
