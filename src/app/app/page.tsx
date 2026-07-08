@@ -356,6 +356,7 @@ export default function BudgetForecast() {
   const [snapLoading, setSnapLoading] = useState(false);
   const [snapBank, setSnapBank] = useState<BankData | null>(null);
   const [snapThumb, setSnapThumb] = useState<string | undefined>(undefined);
+  const [showAllResets, setShowAllResets] = useState(false);
   const [listening, setListening] = useState(false);
   const [voiceText, setVoiceText] = useState("");
   const [voiceResult, setVoiceResult] = useState("");
@@ -2443,17 +2444,28 @@ export default function BudgetForecast() {
                 </div>
               );
             })()}
-            {Object.keys(state.balanceResets || {}).length > 0 && (
-              <div style={{ marginTop: 20, paddingTop: 16, borderTop: "1px solid #e2e8f0" }}>
-                <div style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", color: "#94a3b8", marginBottom: 8 }}>Active resets</div>
-                {Object.entries(state.balanceResets).sort().map(([k, v]) => (
-                  <div key={k} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", fontSize: 13, borderBottom: "1px solid #f1f5f9" }}>
-                    <span><span style={{ color: "#64748b" }}>{friendlyDate(k)}</span> — <span style={{ fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{fmt(v)}</span></span>
-                    <button onClick={() => deleteReset(k)} className="bf-btn" style={{ border: "none", background: "none", color: C.redDark, fontSize: 12, fontWeight: 500, cursor: "pointer" }}>Remove</button>
+            {Object.keys(state.balanceResets || {}).length > 0 && (() => {
+              const entries = Object.entries(state.balanceResets).sort((a, b) => b[0].localeCompare(a[0]));
+              const shown = showAllResets ? entries : entries.slice(0, 4);
+              return (
+                <div style={{ marginTop: 20, paddingTop: 16, borderTop: "1px solid #e2e8f0" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                    <div style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", color: "#94a3b8" }}>Active resets ({entries.length})</div>
+                    {entries.length > 4 && (
+                      <button onClick={() => setShowAllResets((v) => !v)} className="bf-btn" style={{ border: "none", background: "none", color: C.blueDark, fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
+                        {showAllResets ? "Show fewer" : `Show all ${entries.length}`}
+                      </button>
+                    )}
                   </div>
-                ))}
-              </div>
-            )}
+                  {shown.map(([k, v]) => (
+                    <div key={k} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", fontSize: 13, borderBottom: "1px solid #f1f5f9" }}>
+                      <span><span style={{ color: "#64748b" }}>{friendlyDate(k)}</span> — <span style={{ fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{fmt(v)}</span></span>
+                      <button onClick={() => deleteReset(k)} className="bf-btn" style={{ border: "none", background: "none", color: C.redDark, fontSize: 12, fontWeight: 500, cursor: "pointer" }}>Remove</button>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
           </div>
         </div>
       )}
