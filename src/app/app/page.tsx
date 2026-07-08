@@ -352,7 +352,7 @@ export default function BudgetForecast() {
   });
   const [shareEmail, setShareEmail] = useState("");
   const [sharedWith, setSharedWith] = useState<{ email: string }[]>([]);
-  const [snapPreview, setSnapPreview] = useState<{ balance: number; date: string; moved: { name: string; from: string; to: string; amount: number }[]; unaccounted: { name: string; amount: number; type: string; date: string }[]; imageUrl?: string } | null>(null);
+  const [snapPreview, setSnapPreview] = useState<{ balance: number; date: string; moved: { name: string; from: string; to: string; amount: number; txId?: string; occurrenceDate?: string }[]; unaccounted: { name: string; amount: number; type: string; date: string }[]; imageUrl?: string } | null>(null);
   const [snapLoading, setSnapLoading] = useState(false);
   const [snapBank, setSnapBank] = useState<BankData | null>(null);
   const [snapThumb, setSnapThumb] = useState<string | undefined>(undefined);
@@ -2305,12 +2305,15 @@ export default function BudgetForecast() {
                 </div>
               </div>
 
-              {/* Action 2: Move transpired items */}
+              {/* Action 2: Move already-cleared upcoming items */}
               {snapPreview.moved.length > 0 && (
                 <div style={{ marginBottom: 16 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
                     <div style={{ width: 24, height: 24, borderRadius: "50%", background: "#f59e0b", color: "#fff", fontSize: 13, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>2</div>
-                    <span style={{ fontSize: 14, fontWeight: 700, color: "#1e293b" }}>Move {snapPreview.moved.length} already-transpired item{snapPreview.moved.length > 1 ? "s" : ""}</span>
+                    <span style={{ fontSize: 14, fontWeight: 700, color: "#1e293b" }}>{snapPreview.moved.length} upcoming item{snapPreview.moved.length > 1 ? "s" : ""} already cleared</span>
+                  </div>
+                  <div style={{ marginLeft: 32, fontSize: 13, color: "#64748b", lineHeight: 1.5, marginBottom: 6 }}>
+                    Scheduled ahead but already posted — moved to the date each one actually cleared, so nothing is counted twice. Nothing is deleted.
                   </div>
                   <div style={{ marginLeft: 32 }}>
                     {snapPreview.moved.map((m, i) => (
@@ -2325,43 +2328,48 @@ export default function BudgetForecast() {
                 </div>
               )}
 
-              {/* Action 3: Flag unaccounted items */}
+              {/* Action 3: Informational — also on your statement (no action taken) */}
               {snapPreview.unaccounted.length > 0 && (
                 <div style={{ marginBottom: 20 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-                    <div style={{ width: 24, height: 24, borderRadius: "50%", background: "#ef4444", color: "#fff", fontSize: 13, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>3</div>
-                    <span style={{ fontSize: 14, fontWeight: 700, color: "#1e293b" }}>{snapPreview.unaccounted.length} unaccounted transaction{snapPreview.unaccounted.length > 1 ? "s" : ""}</span>
+                    <div style={{ width: 24, height: 24, borderRadius: "50%", background: "#94a3b8", color: "#fff", fontSize: 13, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>i</div>
+                    <span style={{ fontSize: 14, fontWeight: 700, color: "#1e293b" }}>Also on your statement ({snapPreview.unaccounted.length})</span>
                   </div>
-                  <div style={{ marginLeft: 32, background: "#fff5f5", borderRadius: 8, border: "1px solid #fecaca", padding: "10px 12px" }}>
+                  <div style={{ marginLeft: 32, background: "#f8fafc", borderRadius: 8, border: "1px solid #e2e8f0", padding: "10px 12px" }}>
                     {snapPreview.unaccounted.map((u, i) => (
                       <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "4px 0", fontSize: 13 }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
                           <span style={{ color: "#94a3b8", fontSize: 11, flexShrink: 0 }}>{friendlyDate(u.date)}</span>
-                          <span style={{ color: "#991b1b", fontWeight: 600 }}>{u.name}</span>
+                          <span style={{ color: "#334155", fontWeight: 600 }}>{u.name}</span>
                         </div>
                         <span style={{ fontWeight: 700, color: u.type === "income" ? C.greenDark : C.redDark }}>{u.type === "income" ? "+" : "-"}{fmt(u.amount)}</span>
                       </div>
                     ))}
-                    <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 6 }}>These appeared in your bank but weren&apos;t in your forecast. They&apos;ll be added as new transactions.</div>
+                    <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 6 }}>These already affected your current balance. Shown for reference — no changes made to your forecast.</div>
                   </div>
                 </div>
               )}
 
               {/* Buttons */}
               <div style={{ display: "flex", gap: 10 }}>
-                <button onClick={() => {
-                  // Apply all actions
-                  // 1. Balance reset
-                  callApi("/api/balance-resets", { method: "POST", body: JSON.stringify({ date: snapPreview.date, amount: snapPreview.balance }) });
-                  // 2. In production: move items and add unaccounted
-                  // For now just close
+                <button onClick={async () => {
+                  const p = snapPreview;
+                  // 1. Snap the balance (the headline).
+                  await callApi("/api/balance-resets", { method: "POST", body: JSON.stringify({ date: p.date, amount: p.balance }) });
+                  // 2. Move each already-cleared future occurrence onto the date it
+                  //    actually posted — a reversible override, never a delete. The
+                  //    "also on your statement" list is informational and untouched.
+                  for (const m of p.moved) {
+                    if (m.txId && m.occurrenceDate) {
+                      await callApi("/api/overrides", { method: "POST", body: JSON.stringify({ transactionId: m.txId, occurrenceDate: m.occurrenceDate, movedTo: m.to }) });
+                    }
+                  }
                   setSnapPreview(null);
-                  reload();
-                  setShareMsg("Balance synced from bank screenshot!");
+                  await reload();
+                  setShareMsg(p.moved.length ? `Balance synced · ${p.moved.length} cleared item${p.moved.length > 1 ? "s" : ""} moved` : "Balance synced from your statement");
                   setTimeout(() => setShareMsg(""), 3000);
                 }} className="bf-btn" style={{ flex: 1, padding: "14px", borderRadius: 12, border: "none", background: th.headerBg, color: "#fff", fontSize: 15, fontWeight: 700 }}>
-                  Apply All Changes
+                  Apply
                 </button>
                 <button onClick={() => setSnapPreview(null)} className="bf-btn" style={{ padding: "14px 24px", borderRadius: 12, border: "1px solid #e2e8f0", background: "#fff", color: "#64748b", fontSize: 14, fontWeight: 600 }}>
                   Cancel

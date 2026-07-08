@@ -23,6 +23,8 @@ export interface SnapMoved {
   from: string;
   to: string;
   amount: number;
+  txId: string;
+  occurrenceDate: string;
 }
 
 export interface SnapUnaccounted {
@@ -137,14 +139,21 @@ function amountMatches(planned: number, bankMag: number) {
   return Math.abs(planned - bankMag) <= tolerance;
 }
 
+function round2(n: number) {
+  return Math.round(n * 100) / 100;
+}
+
 // Produce the { balance, date, moved, unaccounted } shape the snap preview expects.
+// The current balance is the point of the snapshot; matching only exists to catch
+// future-scheduled items that already cleared (so they aren't counted twice after
+// the balance is snapped). Nothing here is destructive.
 export function reconcile(bank: BankData, state: AppState): ReconcileResult {
-  const today = todayKey();
+  const asOf = todayKey();
   const accounts = bank.accounts || [];
   const transactions = (bank.transactions || []).slice().sort((a, b) => a.date.localeCompare(b.date));
 
-  // Balance to snap to: authoritative account summary if present, else the last
-  // known running balance from a transaction list.
+  // The headline: snap the forecast to the actual current balance — the
+  // authoritative account summary if present, else the last running balance.
   let balance = 0;
   if (accounts.length > 0) {
     balance = accounts.reduce((s, a) => s + (Number(a.balance) || 0), 0);
@@ -152,54 +161,58 @@ export function reconcile(bank: BankData, state: AppState): ReconcileResult {
     const withRunning = transactions.filter((t) => t.runningBalance != null);
     if (withRunning.length > 0) balance = Number(withRunning[withRunning.length - 1].runningBalance) || 0;
   }
-  balance = Math.round(balance * 100) / 100;
+  balance = round2(balance);
 
   const moved: SnapMoved[] = [];
   const unaccounted: SnapUnaccounted[] = [];
-
   if (transactions.length === 0) {
-    return { balance, date: today, moved, unaccounted };
+    return { balance, date: asOf, moved, unaccounted };
   }
 
-  // Window generously around the bank transactions and today so we catch a
-  // planned item whose posting date drifted a few weeks either way.
-  const dates = transactions.map((t) => t.date).concat(today).sort();
-  const rStart = addDays(dates[0], -31);
-  const rEnd = addDays(dates[dates.length - 1], 31);
-  const planned = plannedOccurrences(state, rStart, rEnd);
+  // Expand planned occurrences across the recent past and the near future so we
+  // can spot future-scheduled items that have already cleared.
+  const btDates = transactions.map((t) => t.date);
+  const lo = btDates[0] < asOf ? btDates[0] : asOf;
+  const hi = btDates[btDates.length - 1] > asOf ? btDates[btDates.length - 1] : asOf;
+  const planned = plannedOccurrences(state, addDays(lo, -31), addDays(hi, 45));
   const consumed = new Set<number>();
 
-  for (const bt of transactions) {
+  // A future-scheduled occurrence that a (past) bank charge already matches has
+  // already happened — after we snap the balance it would be counted twice, so
+  // propose MOVING it onto the date it actually posted (a reversible override;
+  // never a delete).
+  planned.forEach((p) => {
+    if (p.date <= asOf) return; // only future occurrences can double-count post-reset
+    let bestBank = -1;
+    let bestDelta = Infinity;
+    transactions.forEach((bt, bi) => {
+      if (consumed.has(bi)) return;
+      const bankType = bt.amount < 0 ? "expense" : "income";
+      if (bankType !== p.type) return;
+      if (!amountMatches(p.amount, Math.abs(bt.amount))) return;
+      if (!nameSimilar(p.name, bt.name)) return;
+      const delta = Math.abs(pdkDiff(bt.date, p.date));
+      if (delta < bestDelta) { bestDelta = delta; bestBank = bi; }
+    });
+    if (bestBank >= 0) {
+      const bt = transactions[bestBank];
+      consumed.add(bestBank);
+      moved.push({ name: p.name, from: p.date, to: bt.date, amount: round2(Math.abs(bt.amount)), txId: p.txId, occurrenceDate: p.occurrenceDate });
+    }
+  });
+
+  // Charges that match no plan at all are informational only — they already
+  // shaped the current balance, so we surface them without taking any action.
+  transactions.forEach((bt, bi) => {
+    if (consumed.has(bi)) return;
     const bankType = bt.amount < 0 ? "expense" : "income";
     const bankMag = Math.abs(bt.amount);
+    const accounted = planned.some((p) => p.type === bankType && amountMatches(p.amount, bankMag) && nameSimilar(p.name, bt.name));
+    if (accounted) return;
+    unaccounted.push({ name: bt.name, amount: round2(bankMag), type: bankType, date: bt.date });
+  });
 
-    let bestIdx = -1;
-    let bestDelta = Infinity;
-    planned.forEach((p, idx) => {
-      if (consumed.has(idx)) return;
-      if (p.type !== bankType) return;
-      if (!amountMatches(p.amount, bankMag)) return;
-      if (!nameSimilar(p.name, bt.name)) return;
-      const delta = Math.abs(pdkDiff(p.date, bt.date));
-      if (delta < bestDelta) {
-        bestDelta = delta;
-        bestIdx = idx;
-      }
-    });
-
-    if (bestIdx === -1) {
-      unaccounted.push({ name: bt.name, amount: Math.round(bankMag * 100) / 100, type: bankType, date: bt.date });
-      continue;
-    }
-
-    consumed.add(bestIdx);
-    const p = planned[bestIdx];
-    if (p.date !== bt.date) {
-      moved.push({ name: p.name, from: p.date, to: bt.date, amount: Math.round(bankMag * 100) / 100 });
-    }
-  }
-
-  return { balance, date: today, moved, unaccounted };
+  return { balance, date: asOf, moved, unaccounted };
 }
 
 function pdkDiff(a: string, b: string) {
