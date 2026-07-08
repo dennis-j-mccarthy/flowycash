@@ -2,6 +2,10 @@ import Anthropic from "@anthropic-ai/sdk";
 import { NextRequest, NextResponse } from "next/server";
 import type { BankAccount, BankTransaction } from "@/lib/reconcile";
 
+// Vision extraction can take 10-20s; give the serverless function room so it
+// doesn't hit the default timeout and abort mid-read.
+export const maxDuration = 60;
+
 // Structured-output schema the vision model is constrained to. Kept flat: no
 // string/number constraints, additionalProperties:false everywhere (required by
 // output_config.format on Sonnet 4.6).

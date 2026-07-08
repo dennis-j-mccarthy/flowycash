@@ -925,9 +925,10 @@ export default function BudgetForecast() {
         transactions: [...(prev?.transactions || []), ...(parsed.transactions || [])],
       }));
       if (thumb) setSnapThumb((prev) => prev || thumb);
-    } catch {
-      setShareMsg("Couldn't read that file — try another screenshot or CSV");
-      setTimeout(() => setShareMsg(""), 3500);
+    } catch (e) {
+      const msg = e instanceof Error && e.message ? e.message : "";
+      setShareMsg(msg ? `Reconcile failed: ${msg}` : "Couldn't read that file — try another screenshot or CSV");
+      setTimeout(() => setShareMsg(""), 6000);
     } finally {
       setSnapLoading(false);
     }
