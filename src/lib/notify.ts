@@ -127,8 +127,9 @@ export interface DriftReport {
   hasFindings: boolean;
 }
 
-// Concrete ways to offset a cashflow dip on `dipDate` (balance `dipBalance`).
-// Prefers moving a movable (non-autopay) expense toward the next payday.
+// Several concrete ways to offset a cashflow dip on `dipDate` (balance
+// `dipBalance`) — least-disruptive options first. Prefers moving movable
+// (non-autopay) expenses toward the next payday.
 function dipTips(state: AppState, dipDate: string, dipBalance: number): string[] {
   const deficit = Math.round(Math.abs(dipBalance));
   const occs = expandOccurrences(state, addDays(dipDate, -31), addDays(dipDate, 45));
@@ -136,22 +137,41 @@ function dipTips(state: AppState, dipDate: string, dipBalance: number): string[]
   const nextPay = paydays.find((d) => d > dipDate);
   const target = nextPay ? `${friendlyDate(nextPay)} (your next payday)` : `just after ${friendlyDate(dipDate)}`;
 
+  // Non-autopay expenses on/before the dip, smallest first (least disruptive).
   const movable = occs
-    .filter((o) => o.type === "expense" && !o.autopay && o.amount >= 50 && o.date <= dipDate)
-    .sort((a, b) => b.amount - a.amount);
+    .filter((o) => o.type === "expense" && !o.autopay && o.amount >= 25 && o.date <= dipDate)
+    .sort((a, b) => a.amount - b.amount);
 
   const tips: string[] = [];
+
+  // 1) Smallest single expense that covers the whole gap.
   const single = movable.find((o) => o.amount >= deficit);
   if (single) {
-    tips.push(`Push ${single.name} (${fmt(single.amount)}, ${friendlyDate(single.date)}) to ${target} — that alone covers the ${fmt(deficit)} shortfall.`);
-  } else if (movable[0]) {
-    tips.push(`Move ${movable[0].name} (${fmt(movable[0].amount)}, ${friendlyDate(movable[0].date)}) to ${target} to free up cash before the dip.`);
+    tips.push(`Push ${single.name} (${fmt(single.amount)}, ${friendlyDate(single.date)}) to ${target} — covers the ${fmt(deficit)} on its own.`);
   }
-  if (movable[1] && !single) {
-    tips.push(`Also consider shifting ${movable[1].name} (${fmt(movable[1].amount)}) later.`);
+
+  // 2) A small combination of the smallest items that together cover it.
+  let sum = 0;
+  const combo: Occ[] = [];
+  for (const o of movable) {
+    if (sum >= deficit || combo.length >= 3) break;
+    combo.push(o);
+    sum += o.amount;
   }
-  tips.push(`Or bring in / hold back about ${fmt(deficit)} before ${friendlyDate(dipDate)} — trim discretionary spending or pull income forward.`);
-  return tips.slice(0, 3);
+  if (sum >= deficit && combo.length >= 2) {
+    tips.push(`Or delay ${combo.map((o) => `${o.name} (${fmt(o.amount)})`).join(", ")} to ${target} — together they free up ${fmt(Math.round(sum))}.`);
+  }
+
+  // 3) Raise or hold back the shortfall directly.
+  tips.push(`Or set aside about ${fmt(deficit)} before ${friendlyDate(dipDate)} — trim discretionary spending or pull income forward.`);
+
+  // 4) Note when the next payday recovers it.
+  if (nextPay) {
+    const pay = occs.find((o) => o.date === nextPay && o.type === "income");
+    tips.push(`Your next payday (${friendlyDate(nextPay)}${pay ? `, +${fmt(pay.amount)}` : ""}) brings the balance back up right after.`);
+  }
+
+  return tips.slice(0, 4);
 }
 
 interface ReportOpts {
