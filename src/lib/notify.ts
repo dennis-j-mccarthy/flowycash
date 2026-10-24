@@ -57,7 +57,8 @@ function getOccurrences(startDate: string, recurrence: string, rStart: string, r
   return dates;
 }
 
-interface Occ {
+export interface Occ {
+  transactionId: string;
   name: string;
   date: string; // display date (post-override)
   occurrenceDate: string;
@@ -67,7 +68,7 @@ interface Occ {
 }
 
 // Net signed amount bucketed by display date, applying the override layer.
-function bucketByDate(state: AppState, rStart: string, rEnd: string): Record<string, number> {
+export function bucketByDate(state: AppState, rStart: string, rEnd: string): Record<string, number> {
   const buckets: Record<string, number> = {};
   (state.transactions || []).forEach((tx: Transaction) => {
     getOccurrences(tx.startDate, tx.recurrence, rStart, rEnd, tx.endDate).forEach((odk) => {
@@ -83,13 +84,14 @@ function bucketByDate(state: AppState, rStart: string, rEnd: string): Record<str
   return buckets;
 }
 
-function expandOccurrences(state: AppState, rStart: string, rEnd: string): Occ[] {
+export function expandOccurrences(state: AppState, rStart: string, rEnd: string): Occ[] {
   const out: Occ[] = [];
   (state.transactions || []).forEach((tx: Transaction) => {
     getOccurrences(tx.startDate, tx.recurrence, rStart, rEnd, tx.endDate).forEach((odk) => {
       const ov = state.overrides[`${tx.id}::${odk}`] as OverrideData | undefined;
       if (ov?.deleted) return;
       out.push({
+        transactionId: tx.id,
         name: ov?.name ?? tx.name,
         date: ov?.movedTo || odk,
         occurrenceDate: odk,

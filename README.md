@@ -58,6 +58,7 @@ npm run dev           # Next.js dev server on port 3000
 | `CLERK_SECRET_KEY` | Yes | Clerk secret key (`sk_live_...`) |
 | `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | Yes | Stripe publishable key |
 | `STRIPE_SECRET_KEY` | Yes | Stripe secret key |
+| `ANTHROPIC_API_KEY` | Yes | Anthropic API key. Used by `/api/reconcile/image` (statement photos) and `/api/assistant` (natural-language questions and edits) |
 
 ### Production Gotchas
 
@@ -139,6 +140,7 @@ After any deploy that changes env vars or database schema:
 | `/api/share` | GET, POST, DELETE | Manage shared access by email |
 | `/api/export` | GET | Export all data as JSON backup |
 | `/api/import` | POST | Restore from JSON backup |
+| `/api/assistant` | POST | Natural-language question or change request. Takes the client state plus the viewed month, returns a short reply and a list of proposed actions the client confirms before applying |
 | `/api/stripe/checkout` | POST | Create Stripe checkout session |
 | `/api/stripe/status` | GET | Check subscription status (includes admin bypass) |
 | `/api/stripe/portal` | POST | Create Stripe billing portal session |

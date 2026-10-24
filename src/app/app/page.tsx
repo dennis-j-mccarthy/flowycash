@@ -5,6 +5,7 @@ import { UserButton, useAuth } from "@clerk/nextjs";
 import { ensurePushSubscription } from "@/lib/push-client";
 import type { Transaction, OverrideData, AppState } from "@/lib/types";
 import { reconcile, type BankData } from "@/lib/reconcile";
+import type { AssistantAction } from "@/app/api/assistant/route";
 import { distributeDebt, simulateDistribution, type DebtPlacement } from "@/lib/debt-distribution";
 
 const DAYS = ["S", "M", "T", "W", "T", "F", "S"];
@@ -258,6 +259,13 @@ export default function BudgetForecast() {
   const [filterTag, setFilterTag] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [showSearch, setShowSearch] = useState(false);
+  const [filterType, setFilterType] = useState<"all" | "expense" | "income">("all");
+  const [askOpen, setAskOpen] = useState(false);
+  const [askText, setAskText] = useState("");
+  const [askBusy, setAskBusy] = useState(false);
+  const [askReply, setAskReply] = useState("");
+  const [askActions, setAskActions] = useState<AssistantAction[]>([]);
+  const [askHistory, setAskHistory] = useState<{ role: "user" | "assistant"; text: string }[]>([]);
   const [showChart, setShowChart] = useState(false);
   const [hidePastDays, setHidePastDays] = useState(true);
   const [theme, setTheme] = useState(() => typeof window !== "undefined" ? localStorage.getItem("flowycash-theme") || "forest" : "forest");
@@ -649,8 +657,10 @@ export default function BudgetForecast() {
       const t = Array.from(e.results).map((r: any) => r[0].transcript).join("");
       setVoiceText(t);
       if (e.results[0].isFinal) {
-        processVoice(t.toLowerCase().trim());
         setListening(false);
+        setAskOpen(true);
+        setAskText(t.trim());
+        askAssistant(t.trim());
       }
     };
     rec.onerror = () => { setListening(false); setVoiceResult("Didn't catch that — try again"); setTimeout(() => setVoiceResult(""), 3000); };
@@ -658,61 +668,124 @@ export default function BudgetForecast() {
     rec.start();
   }
 
-  function processVoice(cmd: string) {
-    // Navigation
-    if (cmd.includes("next month")) { nextM(); setVoiceResult(`Moved to next month`); }
-    else if (cmd.includes("previous month") || cmd.includes("last month")) { prevM(); setVoiceResult(`Moved to previous month`); }
-    // Views
-    else if (cmd.includes("show dashboard") || cmd.includes("open dashboard")) { setShowDashboard(true); setVoiceResult("Opening dashboard"); }
-    else if (cmd.includes("close dashboard") || cmd.includes("hide dashboard")) { setShowDashboard(false); setVoiceResult("Closed dashboard"); }
-    else if (cmd.includes("show chart") || cmd.includes("open chart")) { setShowChart(true); setVoiceResult("Showing chart"); }
-    else if (cmd.includes("hide chart") || cmd.includes("close chart")) { setShowChart(false); setVoiceResult("Chart hidden"); }
-    else if (cmd.includes("show tags")) { setShowTagPills(true); setVoiceResult("Tags visible"); }
-    else if (cmd.includes("hide tags")) { setShowTagPills(false); setVoiceResult("Tags hidden"); }
-    // Balance query
-    else if (cmd.match(/balance.*(on|for).*(the\s+)?(\d+)/)) {
-      const dayNum = parseInt(cmd.match(/(\d+)/)?.[1] || "0");
-      const key = dkey(cY, cM, dayNum);
-      const dd = dayMap[key];
-      if (dd) { setVoiceResult(`Balance on the ${dayNum}th: ${fmt(dd.balance)}`); setZoomDay(key); }
-      else setVoiceResult(`No data for the ${dayNum}th`);
+  async function askAssistant(text: string) {
+    const q = text.trim();
+    if (!q || askBusy) return;
+    setAskBusy(true);
+    setAskReply("");
+    setAskActions([]);
+    try {
+      const res = await fetch("/api/assistant", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: q, state, year: cY, month: cM, today: todayKey, demo, history: askHistory.slice(-6) }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
+      const reply: string = data.reply || "";
+      const actions: AssistantAction[] = Array.isArray(data.actions) ? data.actions : [];
+      const nav = actions.filter((a) => a.kind === "go_to_month" || a.kind === "show_day" || a.kind === "search");
+      const edits = actions.filter((a) => !nav.includes(a));
+      // Navigation and search need no confirmation.
+      for (const a of nav) runNavAction(a);
+      setAskReply(reply);
+      setAskActions(edits);
+      setAskHistory((h) => [...h, { role: "user" as const, text: q }, { role: "assistant" as const, text: reply }].slice(-8));
+      setAskText("");
+    } catch (e) {
+      setAskReply(`Couldn't reach the assistant: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setAskBusy(false);
     }
-    // Add transaction: "add expense/income [name] [amount] on the [day]"
-    else if (cmd.match(/add\s+(expense|income)/)) {
-      const type = cmd.includes("income") ? "income" : "expense";
-      const amtMatch = cmd.match(/(\d+)\s*(dollar|buck|bucks|\$)?/);
-      const dayMatch = cmd.match(/(?:on|for)\s+(?:the\s+)?(\d+)/);
-      const amt = amtMatch ? parseInt(amtMatch[1]) : 0;
-      const day = dayMatch ? parseInt(dayMatch[1]) : new Date().getDate();
-      // Extract name: text between type and amount/on
-      let name = cmd.replace(/add\s+(expense|income)\s*/, "").replace(/\d+\s*(dollar|buck|bucks|\$)?s?/, "").replace(/on\s+(?:the\s+)?\d+.*/, "").trim();
-      if (!name) name = type === "income" ? "Income" : "Expense";
-      if (amt > 0) {
-        const date = dkey(cY, cM, Math.min(day, dim(cY, cM)));
-        setForm({ name: name.charAt(0).toUpperCase() + name.slice(1), amount: String(amt), type, recurrence: "none", date, autopay: false, reminder: false, tags: "", highlight: "", note: "" });
-        setEditTx(null);
-        setEditDate(null);
-        openPanel("tx");
-        setVoiceResult(`Adding ${type}: ${name} $${amt} on the ${day}th — confirm in modal`);
-      } else {
-        setVoiceResult(`Say: "add expense Netflix 16 dollars on the 8th"`);
+  }
+
+  function runNavAction(a: AssistantAction) {
+    if (a.kind === "go_to_month" && a.date) {
+      const { year, month } = pdk(a.date);
+      setCY(year); setCM(month); setZoomWeek(null); setZoomDay(null);
+    } else if (a.kind === "show_day" && a.date) {
+      const { year, month } = pdk(a.date);
+      setCY(year); setCM(month); setZoomWeek(null); setZoomDay(a.date);
+    } else if (a.kind === "search" && a.query) {
+      setShowSearch(true); setSearchQuery(a.query);
+    }
+  }
+
+  function describeAction(a: AssistantAction): string {
+    const tx = state.transactions.find((t) => t.id === a.transactionId);
+    const nm = a.name || tx?.name || "payment";
+    const scope = a.scope === "future" ? " (this and all future)" : "";
+    if (a.kind === "move") return `Move ${nm} from ${a.occurrenceDate ? friendlyDate(a.occurrenceDate) : "?"} to ${a.newDate ? friendlyDate(a.newDate) : "?"}${scope}`;
+    if (a.kind === "set_amount") return `Change ${nm} on ${a.occurrenceDate ? friendlyDate(a.occurrenceDate) : "?"} to ${fmt(a.amount || 0)}${scope}`;
+    if (a.kind === "skip") return `Skip ${nm} on ${a.occurrenceDate ? friendlyDate(a.occurrenceDate) : "?"}${scope}`;
+    if (a.kind === "add") return `Add ${a.type === "income" ? "income" : "expense"} ${nm} ${fmt(a.amount || 0)} on ${a.date ? friendlyDate(a.date) : "?"}${a.recurrence && a.recurrence !== "none" ? `, ${a.recurrence}` : ""}`;
+    return a.kind;
+  }
+
+  async function applyAskActions() {
+    const acts = askActions;
+    if (!acts.length) return;
+    setAskBusy(true);
+    const touched = new Set<string>();
+    const dayBefore = (s: string) => { const { year, month, day } = pdk(s); const d = new Date(year, month, day); d.setDate(d.getDate() - 1); return dkey(d.getFullYear(), d.getMonth(), d.getDate()); };
+    try {
+      for (const a of acts) {
+        const tx = state.transactions.find((t) => t.id === a.transactionId);
+        if (a.kind === "add") {
+          if (!a.name || !a.amount || !a.date) continue;
+          await callApi("/api/transactions", { method: "POST", body: JSON.stringify({ name: a.name, amount: a.amount, type: a.type || "expense", recurrence: a.recurrence || "none", startDate: a.date, autopay: false, reminder: false, tags: "", highlight: "", note: "" }) });
+          touched.add(a.date);
+          continue;
+        }
+        if (!tx || !a.occurrenceDate) continue;
+        const occ = a.occurrenceDate;
+        const future = a.scope === "future" && tx.recurrence !== "none";
+        if (a.kind === "move" && a.newDate) {
+          if (tx.recurrence === "none") {
+            await callApi(`/api/transactions/${tx.id}`, { method: "PUT", body: JSON.stringify({ startDate: a.newDate }) });
+          } else if (!future) {
+            await callApi("/api/overrides", { method: "POST", body: JSON.stringify({ transactionId: tx.id, occurrenceDate: occ, movedTo: a.newDate }) });
+          } else if (occ <= tx.startDate) {
+            await callApi(`/api/transactions/${tx.id}`, { method: "PUT", body: JSON.stringify({ startDate: a.newDate }) });
+          } else {
+            await callApi(`/api/transactions/${tx.id}`, { method: "PUT", body: JSON.stringify({ endDate: dayBefore(occ) }) });
+            await callApi("/api/transactions", { method: "POST", body: JSON.stringify({ name: tx.name, amount: tx.amount, type: tx.type, recurrence: tx.recurrence, startDate: a.newDate, autopay: tx.autopay ?? false, reminder: tx.reminder ?? false, tags: tx.tags ?? "", highlight: tx.highlight ?? "", note: tx.note ?? "" }) });
+          }
+          touched.add(occ); touched.add(a.newDate);
+        } else if (a.kind === "set_amount" && a.amount != null) {
+          if (tx.recurrence === "none" || future) {
+            if (future && occ > tx.startDate) {
+              await callApi(`/api/transactions/${tx.id}`, { method: "PUT", body: JSON.stringify({ endDate: dayBefore(occ) }) });
+              await callApi("/api/transactions", { method: "POST", body: JSON.stringify({ name: tx.name, amount: a.amount, type: tx.type, recurrence: tx.recurrence, startDate: occ, autopay: tx.autopay ?? false, reminder: tx.reminder ?? false, tags: tx.tags ?? "", highlight: tx.highlight ?? "", note: tx.note ?? "" }) });
+            } else {
+              await callApi(`/api/transactions/${tx.id}`, { method: "PUT", body: JSON.stringify({ amount: a.amount }) });
+            }
+          } else {
+            await callApi("/api/overrides", { method: "POST", body: JSON.stringify({ transactionId: tx.id, occurrenceDate: occ, amount: a.amount }) });
+          }
+          touched.add(occ);
+        } else if (a.kind === "skip") {
+          if (tx.recurrence === "none" || (future && occ <= tx.startDate)) {
+            await callApi(`/api/transactions/${tx.id}`, { method: "DELETE" });
+          } else if (future) {
+            await callApi(`/api/transactions/${tx.id}`, { method: "PUT", body: JSON.stringify({ endDate: dayBefore(occ) }) });
+          } else {
+            await callApi("/api/overrides", { method: "POST", body: JSON.stringify({ transactionId: tx.id, occurrenceDate: occ, deleted: true }) });
+          }
+          touched.add(occ);
+        }
       }
+      await reload();
+      setExpandedDays((prev) => { const next = new Set(prev); touched.forEach((d) => next.add(d)); return next; });
+      const first = Array.from(touched).sort()[0];
+      if (first) { const { year, month } = pdk(first); if (year !== cY || month !== cM) { setCY(year); setCM(month); } }
+      setAskActions([]);
+      setAskReply("Done.");
+    } catch (e) {
+      setAskReply(`Couldn't apply that: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setAskBusy(false);
     }
-    // Zoom day
-    else if (cmd.match(/(?:show|open|zoom)\s+(?:day\s+)?(?:the\s+)?(\d+)/)) {
-      const dayNum = parseInt(cmd.match(/(\d+)/)?.[1] || "0");
-      const key = dkey(cY, cM, Math.min(dayNum, dim(cY, cM)));
-      setZoomDay(key);
-      setVoiceResult(`Showing day ${dayNum}`);
-    }
-    // Help
-    else if (cmd.includes("help") || cmd.includes("what can")) {
-      setVoiceResult("Try: next month, show dashboard, add expense, balance on the 15th, show day 9");
-    }
-    else {
-      setVoiceResult(`"${cmd}" — not recognized. Say "help" for commands.`);
-    }
-    setTimeout(() => setVoiceResult(""), 4000);
   }
 
   function fuzzyMatch(q: string, target: string): boolean {
@@ -725,6 +798,7 @@ export default function BudgetForecast() {
     for (let j = 0; j < tl.length && i < ql.length; j++) if (tl[j] === ql[i]) i++;
     return i === ql.length;
   }
+  const visibleTx = <T extends { type: string }>(txs: T[]) => filterType === "all" ? txs : txs.filter((t) => t.type === filterType);
   const txMatchesFilter = (tx: any) => {
     if (filterTag && !((tx.tags || "").split(",").map((s: string) => s.trim()).includes(filterTag))) return false;
     if (searchQuery.trim() && !fuzzyMatch(searchQuery, tx.name || "")) return false;
@@ -1093,6 +1167,8 @@ export default function BudgetForecast() {
     .stat-pill:hover .stat-popup { display: block !important; }
     .stat-pill:hover { background: #f8fafc !important; }
     .day-num:hover .day-mag { display: inline !important; }
+    .ask-fab { display: none; }
+    @media (max-width: 999px) { .ask-fab { display: flex; } }
   `;
 
   const th = THEMES[theme] || THEMES.forest;
@@ -1119,6 +1195,12 @@ export default function BudgetForecast() {
           </span>
           <button onClick={nextM} className="bf-btn bf-monthnav" style={{ width: 40, height: 40, borderRadius: "50%", border: "none", background: "rgba(255,255,255,0.15)", fontSize: 22, color: th.headerText, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>›</button>
           <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
+            <button onClick={() => setFilterType((f) => f === "all" ? "expense" : f === "expense" ? "income" : "all")} className="bf-btn" title={filterType === "all" ? "Show expenses only" : filterType === "expense" ? "Show income only" : "Show everything"}
+              style={{ width: 32, height: 32, borderRadius: "50%", border: filterType !== "all" ? `1.5px solid ${th.accent}` : "1.5px solid rgba(255,255,255,0.3)", background: filterType !== "all" ? "rgba(255,255,255,0.9)" : "rgba(255,255,255,0.1)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              {filterType === "all"
+                ? <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={th.headerText} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+                : <span style={{ fontSize: 14, fontWeight: 800, lineHeight: 1, color: filterType === "expense" ? C.redDark : C.greenDark }}>{filterType === "expense" ? "−" : "+"}</span>}
+            </button>
             <button onClick={() => { setShowSearch((v) => { if (v) setSearchQuery(""); return !v; }); }} className="bf-btn" title="Search this month"
               style={{ width: 32, height: 32, borderRadius: "50%", border: showSearch || searchQuery ? `1.5px solid ${th.accent}` : "1.5px solid rgba(255,255,255,0.3)", background: showSearch || searchQuery ? "rgba(255,255,255,0.9)" : "rgba(255,255,255,0.1)", display: "flex", alignItems: "center", justifyContent: "center" }}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={showSearch || searchQuery ? th.headerBg : th.headerText} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
@@ -1134,6 +1216,10 @@ export default function BudgetForecast() {
             <button data-tour="chart" onClick={() => setShow3MChart(true)} className="bf-btn" title="Cashflow Chart"
               style={{ width: 32, height: 32, borderRadius: "50%", border: "1.5px solid rgba(255,255,255,0.3)", background: "rgba(255,255,255,0.1)", display: "flex", alignItems: "center", justifyContent: "center" }}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={th.headerText} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+            </button>
+            <button onClick={() => setAskOpen((v) => !v)} className="bf-btn" title="Ask or tell Flowy"
+              style={{ width: 32, height: 32, borderRadius: "50%", border: askOpen ? `1.5px solid ${th.accent}` : "1.5px solid rgba(255,255,255,0.3)", background: askOpen ? "rgba(255,255,255,0.9)" : "rgba(255,255,255,0.1)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={askOpen ? th.headerBg : th.headerText} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
             </button>
             <button onClick={startListening} className="bf-btn" title="Voice command"
               style={{ width: 32, height: 32, borderRadius: "50%", border: listening ? `1.5px solid #ef4444` : "1.5px solid rgba(255,255,255,0.3)", background: listening ? "#fee2e2" : "rgba(255,255,255,0.1)", display: "flex", alignItems: "center", justifyContent: "center", animation: listening ? "pulse 1s infinite" : "none" }}>
@@ -1283,6 +1369,77 @@ export default function BudgetForecast() {
             return searchQuery.trim() ? <span style={{ fontSize: 11, color: "#64748b" }}>{matchCount} match{matchCount === 1 ? "" : "es"}</span> : null;
           })()}
           <button onClick={() => { setSearchQuery(""); setShowSearch(false); }} className="bf-btn" style={{ border: "none", background: "none", color: "#94a3b8", fontSize: 14, cursor: "pointer", padding: "0 4px", fontWeight: 700 }}>×</button>
+        </div>
+      )}
+      {/* Search results: where each match falls this month, or the next time it falls */}
+      {showSearch && searchQuery.trim() && (() => {
+        const hits = data.flatMap((dd) => dd.transactions.filter((tx) => fuzzyMatch(searchQuery, tx.name || "")).map((tx) => ({ tx, date: dd.date })));
+        if (hits.length === 0) {
+          const nextStart = dkey(cM === 11 ? cY + 1 : cY, cM === 11 ? 0 : cM + 1, 1);
+          const farY = cM + 6 > 11 ? cY + 1 : cY; const farM = (cM + 6) % 12;
+          const upcoming = state.transactions.filter((tx) => fuzzyMatch(searchQuery, tx.name || ""))
+            .flatMap((tx) => getOccurrences(tx.startDate, tx.recurrence, nextStart, dkey(farY, farM, dim(farY, farM)), tx.endDate).map((d) => ({ tx, date: (state.overrides[`${tx.id}::${d}`] as OverrideData | undefined)?.movedTo || d })))
+            .sort((a, b) => a.date.localeCompare(b.date)).slice(0, 3);
+          return (
+            <div style={{ flexShrink: 0, padding: "6px 10px", marginBottom: 6, fontSize: 12, color: "#64748b", background: "#fff", borderRadius: 8, border: "1px solid #e2e8f0" }}>
+              Nothing matching &ldquo;{searchQuery}&rdquo; in {MONTHS[cM]}.
+              {upcoming.length > 0 && <> Next: {upcoming.map((u, i) => <span key={i}><button onClick={() => { const { year, month } = pdk(u.date); setCY(year); setCM(month); setZoomDay(u.date); }} className="bf-btn" style={{ border: "none", background: "none", padding: 0, color: th.accent, fontWeight: 600, fontSize: 12, textDecoration: "underline" }}>{u.tx.name} on {friendlyDate(u.date)}</button>{i < upcoming.length - 1 ? ", " : ""}</span>)}</>}
+            </div>
+          );
+        }
+        return (
+          <div style={{ flexShrink: 0, display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 6 }}>
+            {hits.map(({ tx, date }, i) => (
+              <button key={i} onClick={() => { setZoomDay(date); setExpandedDays((prev) => new Set(prev).add(date)); }} className="bf-btn"
+                style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 12px", borderRadius: 999, border: "1px solid #e2e8f0", background: "#fff", fontSize: 12, color: "#1e293b" }}>
+                <span style={{ fontWeight: 600 }}>{tx.name}</span>
+                <span style={{ color: "#64748b" }}>{friendlyDate(date)}</span>
+                <span style={{ fontWeight: 700, fontVariantNumeric: "tabular-nums", color: tx.type === "income" ? C.greenDark : C.redDark }}>{fmt(Math.abs(tx.amount))}</span>
+              </button>
+            ))}
+          </div>
+        );
+      })()}
+
+      {/* Ask bar: type or dictate a question or a change */}
+      {askOpen && (
+        <div style={{ flexShrink: 0, marginBottom: 8, background: "#fff", borderRadius: 12, border: `1.5px solid ${th.accent}44`, boxShadow: "0 4px 16px rgba(0,0,0,0.06)" }}>
+          <form onSubmit={(e) => { e.preventDefault(); askAssistant(askText); }} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px" }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={th.accent} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+            <input autoFocus value={askText} onChange={(e) => setAskText(e.target.value)} disabled={askBusy}
+              onKeyDown={(e) => { if (e.key === "Escape") { setAskOpen(false); setAskReply(""); setAskActions([]); } }}
+              placeholder="Where is the mortgage this month?  Move Bob's payment to Tuesday."
+              style={{ flex: 1, minWidth: 0, border: "none", background: "transparent", fontSize: 15, color: "#1e293b", outline: "none", fontFamily: "inherit" }} />
+            <button type="submit" disabled={askBusy || !askText.trim()} className="bf-btn" style={{ border: "none", borderRadius: 8, padding: "6px 12px", background: askBusy || !askText.trim() ? "#e2e8f0" : th.accent, color: askBusy || !askText.trim() ? "#94a3b8" : "#fff", fontSize: 13, fontWeight: 700 }}>{askBusy ? "…" : "Ask"}</button>
+            <button type="button" onClick={() => { setAskOpen(false); setAskReply(""); setAskActions([]); }} className="bf-btn" style={{ border: "none", background: "none", color: "#94a3b8", fontSize: 16, cursor: "pointer", padding: "0 4px", fontWeight: 700 }}>×</button>
+          </form>
+          {(askReply || askActions.length > 0) && (
+            <div style={{ borderTop: "1px solid #f1f5f9", padding: "10px 14px 12px" }}>
+              {askReply && <div style={{ fontSize: 14, color: "#1e293b", lineHeight: 1.5 }}>{askReply}</div>}
+              {askActions.length > 0 && (
+                <div style={{ marginTop: 10 }}>
+                  {askActions.map((a, i) => (
+                    <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", fontSize: 13, color: "#334155" }}>
+                      <span style={{ width: 6, height: 6, borderRadius: "50%", background: th.accent, flexShrink: 0 }} />
+                      {describeAction(a)}
+                    </div>
+                  ))}
+                  <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                    <button onClick={applyAskActions} disabled={askBusy} className="bf-btn" style={{ border: "none", borderRadius: 8, padding: "8px 16px", background: th.accent, color: "#fff", fontSize: 13, fontWeight: 700 }}>{askBusy ? "Applying…" : "Apply"}</button>
+                    <button onClick={() => { setAskActions([]); setAskReply(""); }} disabled={askBusy} className="bf-btn" style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 16px", background: "#fff", color: "#64748b", fontSize: 13, fontWeight: 600 }}>Cancel</button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Type filter indicator */}
+      {filterType !== "all" && (
+        <div style={{ flexShrink: 0, display: "flex", alignItems: "center", gap: 8, padding: "4px 8px", marginBottom: 4, background: filterType === "expense" ? C.redBg : C.greenBg, borderRadius: 8, border: `1px solid ${filterType === "expense" ? C.redBorder : C.greenBorder}` }}>
+          <span style={{ fontSize: 12, fontWeight: 600, color: filterType === "expense" ? C.redDark : C.greenDark }}>Showing {filterType === "expense" ? "expenses" : "income"} only</span>
+          <button onClick={() => setFilterType("all")} className="bf-btn" style={{ border: "none", background: "none", color: filterType === "expense" ? C.redDark : C.greenDark, fontSize: 14, cursor: "pointer", padding: "0 4px", fontWeight: 700 }}>×</button>
         </div>
       )}
 
@@ -2643,7 +2800,7 @@ export default function BudgetForecast() {
                 Week of {wk.find(Boolean) ? `${MONTHS[cM]} ${wk.find(Boolean)}` : ""}
               </span>
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 8, flex: 1, minHeight: 0 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 8, flex: 1, minHeight: 0, overflowY: "auto", alignContent: "start" }}>
               {DAY_NAMES.map((dn, i) => {
                 const day = wk[i];
                 const dd = day ? dayMap[dkey(cY, cM, day)] : null;
@@ -2652,7 +2809,7 @@ export default function BudgetForecast() {
                 const isPast = key < todayKey;
                 if (!day) return <div key={key} style={{ background: "#f8fafc", borderRadius: 12, opacity: 0.3 }} />;
                 return (
-                  <div key={key} style={{ background: dd && dd.balance < 0 ? "#fff5f5" : th.calBg, border: `1px solid ${th.gridBorder}`, borderRadius: 12, display: "flex", flexDirection: "column", overflow: "hidden", opacity: isPast ? 0.55 : 1 }}>
+                  <div key={key} style={{ background: dd && dd.balance < 0 ? "#fff5f5" : th.calBg, border: `1px solid ${th.gridBorder}`, borderRadius: 12, display: "flex", flexDirection: "column", minHeight: 160, opacity: isPast ? 0.55 : 1 }}>
                     <div style={{ padding: "10px 12px 6px", display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: `1px solid ${th.gridBorder}` }}>
                       <div>
                         <div style={{ fontSize: 11, color: "#94a3b8", fontWeight: 600, textTransform: "uppercase" }}>{dn}</div>
@@ -2660,8 +2817,8 @@ export default function BudgetForecast() {
                       </div>
                       {dd?.hasReset && <span style={{ fontSize: 9, fontWeight: 700, background: C.blueDark, color: "#fff", padding: "2px 6px", borderRadius: 4 }}>RST</span>}
                     </div>
-                    <div style={{ flex: 1, overflowY: "auto", padding: "6px 10px" }}>
-                      {dd?.transactions.map((tx, ti) => (
+                    <div style={{ flex: 1, padding: "6px 10px" }}>
+                      {visibleTx(dd?.transactions || []).map((tx, ti) => (
                         <div key={ti} className="tx-chip" draggable onDragStart={(e) => onDragStart(e, tx, tx.occurrenceDate)}
                           onClick={(e) => { e.stopPropagation(); openEdit(tx, tx.occurrenceDate); }}
                           style={{ fontSize: 13, padding: "4px 8px", marginBottom: 4, borderRadius: 6,
@@ -2675,7 +2832,7 @@ export default function BudgetForecast() {
                           <span style={{ marginLeft: (tx as any).autopay ? 2 : "auto", flexShrink: 0, fontWeight: 700, fontVariantNumeric: "tabular-nums", fontSize: 12, color: tx.type === "income" ? C.greenDark : C.redDark }}>{fmt(Math.abs(tx.amount))}</span>
                         </div>
                       ))}
-                      {(!dd || dd.transactions.length === 0) && <div style={{ color: "#cbd5e1", fontSize: 12, padding: "8px 0" }}>No transactions</div>}
+                      {visibleTx(dd?.transactions || []).length === 0 && <div style={{ color: "#cbd5e1", fontSize: 12, padding: "8px 0" }}>No transactions</div>}
                     </div>
                     <div onClick={(e) => { e.stopPropagation(); openResetPanel(key); }}
                       style={{ flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 10px", background: th.totalBg, borderTop: `1px solid ${th.totalBorder}`, cursor: "pointer" }}>
@@ -2692,8 +2849,8 @@ export default function BudgetForecast() {
         );
       })()}
       {view === "calendar" && zoomWeek === null && (
-        <div data-tour="calendar" style={{ overflowX: "auto", flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gridTemplateRows: `45px repeat(${weeks.length}, 1fr)`, borderRadius: 14, overflow: "hidden", border: `1px solid ${th.gridBorder}`, flex: 1 }}>
+        <div data-tour="calendar" style={{ overflowX: "auto", overflowY: "auto", flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gridTemplateRows: `45px repeat(${weeks.length}, minmax(${Math.max(72, fontSize * 7)}px, 1fr))`, borderRadius: 14, overflow: "hidden", border: `1px solid ${th.gridBorder}`, flex: "1 0 auto" }}>
             {DAYS.map((d, i) => (
               <div key={i} style={{ padding: "10px 4px", fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", color: th.dayBarText, textAlign: "center", background: th.dayBarBg, borderBottom: `1px solid ${th.dayBarBorder}`, display: "flex", alignItems: "center", justifyContent: "center" }}>{d}</div>
             ))}
@@ -2718,7 +2875,7 @@ export default function BudgetForecast() {
                 const isSel = selDay === key;
                 return (
                   <div key={key} className="cal-cell"
-                    style={{ minHeight: 0,position: "relative", cursor: "pointer", overflow: "hidden",
+                    style={{ minHeight: 0, position: "relative", cursor: "pointer",
                       opacity: isPast ? 0.55 : 1,
                       background: isSel ? "#f8fafc" : dd && dd.balance < 0 ? "#fff5f5" : "#fff",
                       borderTop: `1px solid ${th.gridBorder}`,
@@ -2731,7 +2888,7 @@ export default function BudgetForecast() {
                     onDrop={(e) => onDrop(e, key)}
                   >
                     {dropTgt === key && <div style={{ position: "absolute", inset: 2, background: "rgba(59,130,246,0.06)", border: "2px dashed #3b82f6", borderRadius: 8, pointerEvents: "none", zIndex: 5 }} />}
-                    <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "6px 7px" }}
+                    <div style={{ flex: 1, minHeight: 0, padding: "6px 7px" }}
                       onClick={(e) => { if (e.target === e.currentTarget) openAdd(key); }}>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 3 }}>
                         {isToday ? (
@@ -2752,7 +2909,7 @@ export default function BudgetForecast() {
                         </div>
                       )}
                       <div>
-                        {dd?.transactions.map((tx, i) => (
+                        {visibleTx(dd?.transactions || []).map((tx, i) => (
                           <div key={i} className="tx-chip" draggable onDragStart={(e) => onDragStart(e, tx, tx.occurrenceDate)}
                             onClick={(e) => { e.stopPropagation(); openEdit(tx, tx.occurrenceDate); }}
                             style={{ fontSize, fontWeight: 600, padding: "1px 6px", marginTop: 1, borderRadius: 5, lineHeight: 1.3,
@@ -2848,8 +3005,8 @@ export default function BudgetForecast() {
                       {DAY_NAMES[new Date(cY, cM, dd.day).getDay()].slice(0, 3)} {dd.day}
                     </span>
                     {dd.hasReset && <span style={{ fontSize: 8, fontWeight: 700, background: C.blueDark, color: "#fff", padding: "2px 5px", borderRadius: 4 }}>RST</span>}
-                    {!isOpen && dd.transactions.length > 0 && <span style={{ fontSize: 11, color: "#94a3b8" }}>{dd.transactions.length} item{dd.transactions.length > 1 ? "s" : ""}</span>}
-                    {dd.transactions.length === 0 && <span style={{ fontSize: 12, color: "#94a3b8" }}>—</span>}
+                    {!isOpen && visibleTx(dd.transactions).length > 0 && <span style={{ fontSize: 11, color: "#94a3b8" }}>{visibleTx(dd.transactions).length} item{visibleTx(dd.transactions).length > 1 ? "s" : ""}</span>}
+                    {visibleTx(dd.transactions).length === 0 && <span style={{ fontSize: 12, color: "#94a3b8" }}>—</span>}
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
                     {dd.balance < 0 && <span onClick={(e) => { e.stopPropagation(); setAdviceDay(dd.date); }} style={{ cursor: "pointer", flexShrink: 0, display: "inline-flex", alignItems: "center" }} title="Get advice"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z"/></svg></span>}
@@ -2859,7 +3016,7 @@ export default function BudgetForecast() {
                 </div>
                 {isOpen && (
                   <>
-                    {dd.transactions.map((tx, i) => (
+                    {visibleTx(dd.transactions).map((tx, i) => (
                       <div key={i} className="list-row" draggable onDragStart={(e) => onDragStart(e, tx, tx.occurrenceDate)}
                         onClick={() => openEdit(tx, tx.occurrenceDate)}
                         style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 18px 8px 36px", cursor: "pointer", borderRadius: 0,
@@ -3274,6 +3431,14 @@ export default function BudgetForecast() {
           </div>
         </>);
       })()}
+
+      {/* Floating Ask button for phones, where the header icons do not fit */}
+      {!askOpen && (
+        <button onClick={() => setAskOpen(true)} className="bf-btn ask-fab" title="Ask or tell Flowy"
+          style={{ position: "fixed", right: 18, bottom: 64, zIndex: 60, width: 52, height: 52, borderRadius: "50%", border: "none", background: th.accent, color: "#fff", alignItems: "center", justifyContent: "center", boxShadow: "0 8px 24px rgba(0,0,0,0.25)" }}>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        </button>
+      )}
 
       {/* Voice feedback */}
       {(listening || voiceResult) && (
