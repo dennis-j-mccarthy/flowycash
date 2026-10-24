@@ -15,7 +15,7 @@ function Chevron() {
   return <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={GM} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>;
 }
 
-const STEPS = ["Link", "Today", "Sort", "Changed", "Calendar"] as const;
+const STEPS = ["Link", "Balance updated", "Today", "Sort", "Changed", "Calendar"] as const;
 
 export default function PlaidDemo({ onClose }: { onClose: () => void }) {
   const [step, setStep] = useState(0);
@@ -67,11 +67,47 @@ export default function PlaidDemo({ onClose }: { onClose: () => void }) {
       </div>
     );
     if (step === 1) return (
+      <div style={{ display: "flex", flexDirection: "column", height: "100%", background: G, color: "#fff" }}>
+        <div style={{ padding: "26px 22px 0", display: "flex", flexDirection: "column", gap: 4 }}>
+          <span style={{ fontSize: 11, color: GS, display: "flex", alignItems: "center", gap: 6 }}><Check color="#6ee7b7" size={12} />Every morning · 6:12 AM</span>
+          <span style={{ fontSize: 30, fontWeight: 800, letterSpacing: "-0.035em", lineHeight: 1.05, marginTop: 6 }}>Balance updated.</span>
+          <span style={{ fontSize: 13, color: GL, lineHeight: 1.5, marginTop: 4 }}>Chase Checking ····4821 reported in overnight. Your calendar now starts from the real number. You did nothing.</span>
+        </div>
+        <div style={{ margin: "18px 16px 0", background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.18)", borderRadius: 16, padding: "16px 16px 14px", display: "flex", flexDirection: "column", gap: 10 }}>
+          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
+            <span style={{ fontSize: 11, fontWeight: 700, color: GS, textTransform: "uppercase", letterSpacing: "0.08em" }}>Bank balance</span>
+            <span style={{ fontSize: 34, fontWeight: 800, letterSpacing: "-0.04em", lineHeight: 1 }}>$2,174</span>
+          </div>
+          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", borderTop: "1px solid rgba(255,255,255,0.14)", paddingTop: 10 }}>
+            <span style={{ fontSize: 12, color: GL }}>Your forecast said</span>
+            <span style={{ fontSize: 14, fontWeight: 700, color: GL, textDecoration: "line-through" }}>$2,178</span>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <span style={{ fontSize: 12, color: GL }}>Off by</span>
+            <span style={{ fontSize: 13, fontWeight: 800, color: "#6ee7b7", background: "rgba(16,185,129,0.25)", borderRadius: 999, padding: "2px 10px" }}>$4 · Shell was $53.40, not $55</span>
+          </div>
+        </div>
+        <div style={{ margin: "12px 16px 0", background: "#fff", borderRadius: 16, padding: "12px 14px", color: INK, display: "flex", flexDirection: "column", gap: 8 }}>
+          <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ fontSize: 12, fontWeight: 700 }}>3 items cleared and matched</span><span style={{ fontSize: 11, fontWeight: 600, color: GM }}>Marked done</span></div>
+          {[["Netflix", "$16.00"], ["Shell", "$53.40"], ["Paycheck", "+$4,500.00"]].map(([n, a]) => (
+            <div key={n} style={{ display: "flex", alignItems: "center", gap: 10 }}><Check size={14} /><span style={{ flex: 1, fontSize: 13 }}>{n}</span><span style={{ fontSize: 13, fontWeight: 600, color: a.startsWith("+") ? GM : MUTED }}>{a}</span></div>
+          ))}
+        </div>
+        <div style={{ margin: "12px 16px 0", display: "flex", alignItems: "center", gap: 10, background: "rgba(255,255,255,0.1)", borderRadius: 12, padding: "10px 12px" }}>
+          <span style={{ width: 26, height: 26, borderRadius: "50%", background: "#10b981", display: "flex", alignItems: "center", justifyContent: "center" }}><Check color="#fff" size={14} /></span>
+          <span style={{ fontSize: 12, color: GL, lineHeight: 1.4 }}>Most mornings end here. Today there is one small thing to sort.</span>
+        </div>
+        <div style={{ marginTop: "auto", padding: "14px 16px 18px" }}>
+          <button onClick={() => setStep(2)} className="bf-btn" style={{ width: "100%", background: "#fff", color: G, border: "none", borderRadius: 12, padding: "14px", fontSize: 14, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>See today</button>
+        </div>
+      </div>
+    );
+    if (step === 2) return (
       <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
         <div style={{ background: G, padding: "22px 20px 20px", display: "flex", flexDirection: "column", gap: 12 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <span style={{ fontSize: 14, fontWeight: 700, color: "#fff" }}>flowycash</span>
-            <span style={{ fontSize: 11, color: GS, display: "flex", alignItems: "center", gap: 5 }}><Check color="#6ee7b7" size={11} />Bank synced 6:12 AM</span>
+            <span style={{ fontSize: 11, color: GS, display: "flex", alignItems: "center", gap: 5 }}><Check color="#6ee7b7" size={11} />Balance updated 6:12 AM</span>
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
             <span style={{ fontSize: 11, fontWeight: 600, color: GS, textTransform: "uppercase", letterSpacing: "0.08em" }}>Safe to spend until Friday</span>
@@ -86,7 +122,7 @@ export default function PlaidDemo({ onClose }: { onClose: () => void }) {
               <div key={n} style={{ display: "flex", alignItems: "center", gap: 10 }}><Check size={15} /><span style={{ flex: 1, fontSize: 13 }}>{n}</span><span style={{ fontSize: 13, fontWeight: 600, color: c }}>{a}</span></div>
             ))}
           </div>
-          <button onClick={() => setStep(2)} className="bf-btn" style={{ textAlign: "left", background: "#fff", border: `1.5px solid #10b981`, borderRadius: 14, padding: "12px 14px", display: "flex", alignItems: "center", gap: 12, color: INK, cursor: "pointer", fontFamily: "inherit" }}>
+          <button onClick={() => setStep(3)} className="bf-btn" style={{ textAlign: "left", background: "#fff", border: `1.5px solid #10b981`, borderRadius: 14, padding: "12px 14px", display: "flex", alignItems: "center", gap: 12, color: INK, cursor: "pointer", fontFamily: "inherit" }}>
             <span style={{ width: 30, height: 30, borderRadius: "50%", background: GL, color: G, fontSize: 14, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center" }}>1</span>
             <span style={{ flex: 1, display: "flex", flexDirection: "column" }}><span style={{ fontSize: 13, fontWeight: 700 }}>One thing to sort</span><span style={{ fontSize: 11, color: MUTED }}>Publix, $84.12. Takes ten seconds.</span></span>
             <Chevron />
@@ -100,7 +136,7 @@ export default function PlaidDemo({ onClose }: { onClose: () => void }) {
         </div>
       </div>
     );
-    if (step === 2) return (
+    if (step === 3) return (
       <div style={{ display: "flex", flexDirection: "column", height: "100%", padding: "18px 16px" , gap: 14 }}>
         <span style={{ fontSize: 11, fontWeight: 600, color: MUTED, textAlign: "center" }}>1 of 1 to sort</span>
         <div style={{ background: "#fff", border: `1px solid ${LINE}`, borderRadius: 16, padding: "18px", display: "flex", flexDirection: "column", gap: 4, boxShadow: "0 10px 30px rgba(15,23,42,0.06)" }}>
@@ -118,7 +154,7 @@ export default function PlaidDemo({ onClose }: { onClose: () => void }) {
           ].map(([k, t, s]) => {
             const on = sortPick === k || (sortPick === null && k === "groceries");
             return (
-              <button key={k} onClick={() => { setSortPick(k); setTimeout(() => setStep(3), 350); }} className="bf-btn"
+              <button key={k} onClick={() => { setSortPick(k); setTimeout(() => setStep(4), 350); }} className="bf-btn"
                 style={{ textAlign: "left", background: on ? G : "#fff", color: on ? "#fff" : INK, border: on ? "none" : `1.5px solid ${LINE}`, borderRadius: 12, padding: "12px 14px", fontFamily: "inherit", display: "flex", flexDirection: "column", gap: 2, cursor: "pointer" }}>
                 <span style={{ fontSize: 14, fontWeight: 600 }}>{t}</span><span style={{ fontSize: 11, color: on ? GS : MUTED }}>{s}</span>
               </button>
@@ -130,7 +166,7 @@ export default function PlaidDemo({ onClose }: { onClose: () => void }) {
         </div>
       </div>
     );
-    if (step === 3) return (
+    if (step === 4) return (
       <div style={{ display: "flex", flexDirection: "column", height: "100%", padding: "18px 16px", gap: 14 }}>
         <span style={{ fontSize: 11, fontWeight: 600, color: MUTED, textAlign: "center" }}>Nov 1 · Morning</span>
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -149,7 +185,7 @@ export default function PlaidDemo({ onClose }: { onClose: () => void }) {
           ].map(([k, t, s]) => {
             const on = rentPick === k || (rentPick === null && k === "future");
             return (
-              <button key={k} onClick={() => { setRentPick(k); setTimeout(() => setStep(4), 350); }} className="bf-btn"
+              <button key={k} onClick={() => { setRentPick(k); setTimeout(() => setStep(5), 350); }} className="bf-btn"
                 style={{ textAlign: "left", background: on ? G : "#fff", color: on ? "#fff" : INK, border: on ? "none" : `1.5px solid ${LINE}`, borderRadius: 12, padding: "12px 14px", fontFamily: "inherit", display: "flex", flexDirection: "column", gap: 2, cursor: "pointer" }}>
                 <span style={{ fontSize: 14, fontWeight: 600 }}>{t}</span><span style={{ fontSize: 11, color: on ? GS : MUTED }}>{s}</span>
               </button>
