@@ -6,6 +6,7 @@ import { ensurePushSubscription } from "@/lib/push-client";
 import type { Transaction, OverrideData, AppState } from "@/lib/types";
 import { reconcile, type BankData } from "@/lib/reconcile";
 import type { AssistantAction } from "@/app/api/assistant/route";
+import PlaidDemo from "./PlaidDemo";
 import { distributeDebt, simulateDistribution, type DebtPlacement } from "@/lib/debt-distribution";
 
 const DAYS = ["S", "M", "T", "W", "T", "F", "S"];
@@ -367,6 +368,7 @@ export default function BudgetForecast() {
   const [showDashboard, setShowDashboard] = useState(false);
   const [chartMonths, setChartMonths] = useState(1);
   const [showThemePicker, setShowThemePicker] = useState(false);
+  const [showPlaidDemo, setShowPlaidDemo] = useState(false);
   const [calFeed, setCalFeed] = useState<{ open: boolean; url: string; webcal: string; error: string; copied: boolean }>({ open: false, url: "", webcal: "", error: "", copied: false });
   const [showMonthNote, setShowMonthNote] = useState(false);
   const [tutorialStep, setTutorialStep] = useState(-1);
@@ -2999,6 +3001,10 @@ export default function BudgetForecast() {
             style={{ border: "none", background: "none", padding: 0, color: "#64748b", fontSize: 11, fontWeight: 600, textDecoration: "underline", textUnderlineOffset: 3, cursor: "pointer", whiteSpace: "nowrap" }}>
             Calendar feed
           </button>
+          <button onClick={() => setShowPlaidDemo(true)} className="bf-btn"
+            style={{ border: "none", background: "none", padding: 0, color: th.accent, fontSize: 11, fontWeight: 700, textDecoration: "underline", textUnderlineOffset: 3, cursor: "pointer", whiteSpace: "nowrap" }}>
+            Plaid demo
+          </button>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
           <a href="/api/export" download className="bf-btn"
@@ -3032,6 +3038,8 @@ export default function BudgetForecast() {
           )}
         </div>
       </div>
+
+      {showPlaidDemo && <PlaidDemo onClose={() => setShowPlaidDemo(false)} />}
 
       {/* Calendar feed */}
       {calFeed.open && (
