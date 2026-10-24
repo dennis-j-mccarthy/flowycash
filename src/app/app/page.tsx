@@ -367,6 +367,7 @@ export default function BudgetForecast() {
   const [showDashboard, setShowDashboard] = useState(false);
   const [chartMonths, setChartMonths] = useState(1);
   const [showThemePicker, setShowThemePicker] = useState(false);
+  const [calFeed, setCalFeed] = useState<{ open: boolean; url: string; webcal: string; error: string; copied: boolean }>({ open: false, url: "", webcal: "", error: "", copied: false });
   const [showMonthNote, setShowMonthNote] = useState(false);
   const [tutorialStep, setTutorialStep] = useState(-1);
   const [shareMsg, setShareMsg] = useState("");
@@ -1352,7 +1353,8 @@ export default function BudgetForecast() {
                   style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 12px", borderRadius: 20, background: active ? border : "#fff", border: `1.5px solid ${border}`, position: "relative", cursor: "pointer", boxShadow: active ? "0 0 0 2px rgba(255,255,255,0.6)" : "none" }}>
                   <span style={{ fontSize: 10, fontWeight: 600, color: active ? "#fff" : "#94a3b8", textTransform: "uppercase", letterSpacing: "0.05em" }}>{label}</span>
                   <span style={{ fontSize: 13, fontWeight: 700, color: active ? "#fff" : color, fontVariantNumeric: "tabular-nums", letterSpacing: "-0.02em" }}>{val}</span>
-                  <span style={{ fontSize: 8, color: active ? "#fff" : "#94a3b8", lineHeight: 1 }}>▼</span>
+                  {items.length > 0 && <span style={{ fontSize: 8, color: active ? "#fff" : "#94a3b8", lineHeight: 1 }}>▼</span>}
+                  {items.length > 0 && (
                   <div className="stat-popup" style={{ display: "none", position: "absolute", top: "100%", right: 0, marginTop: 4, background: "#fff", borderRadius: 12, border: "1px solid #e2e8f0", boxShadow: "0 8px 24px rgba(0,0,0,0.12)", padding: "10px 14px", zIndex: 40, minWidth: 240, maxHeight: 350, overflowY: "auto" }}>
                     {items.map((item, i) => (
                       <div key={i} style={{ display: "flex", justifyContent: "space-between", gap: 12, padding: "3px 0", fontSize: 12 }}>
@@ -1361,6 +1363,7 @@ export default function BudgetForecast() {
                       </div>
                     ))}
                   </div>
+                  )}
                 </div>
                 );
               })}
@@ -2952,6 +2955,19 @@ export default function BudgetForecast() {
             style={{ border: "none", background: "none", padding: 0, color: "#64748b", fontSize: 11, fontWeight: 600, textDecoration: "underline", textUnderlineOffset: 3, cursor: "pointer", whiteSpace: "nowrap" }}>
             Distribute a debt
           </button>
+          <button onClick={async () => {
+            setCalFeed({ open: true, url: "", webcal: "", error: "", copied: false });
+            if (demo || !isSignedIn) { setCalFeed((c) => ({ ...c, error: "Sign in to get your personal calendar link." })); return; }
+            try {
+              const r = await fetch("/api/calendar");
+              const d = await r.json();
+              if (!r.ok) throw new Error(d?.error || `HTTP ${r.status}`);
+              setCalFeed((c) => ({ ...c, url: d.url, webcal: d.webcal }));
+            } catch (e) { setCalFeed((c) => ({ ...c, error: e instanceof Error ? e.message : String(e) })); }
+          }} className="bf-btn footer-debt"
+            style={{ border: "none", background: "none", padding: 0, color: "#64748b", fontSize: 11, fontWeight: 600, textDecoration: "underline", textUnderlineOffset: 3, cursor: "pointer", whiteSpace: "nowrap" }}>
+            Calendar feed
+          </button>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
           <a href="/api/export" download className="bf-btn"
@@ -2985,6 +3001,39 @@ export default function BudgetForecast() {
           )}
         </div>
       </div>
+
+      {/* Calendar feed */}
+      {calFeed.open && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.35)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, animation: "panelIn 0.15s ease" }}
+          onClick={() => setCalFeed((c) => ({ ...c, open: false }))}>
+          <div style={{ background: "#fff", borderRadius: 16, padding: "20px 22px", width: 440, maxWidth: "92vw", boxShadow: "0 20px 60px rgba(0,0,0,0.15)" }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+              <span style={{ fontSize: 15, fontWeight: 700, color: "#1e293b" }}>Calendar feed</span>
+              <button onClick={() => setCalFeed((c) => ({ ...c, open: false }))} className="bf-btn" style={{ border: "none", background: "none", fontSize: 20, color: "#94a3b8", cursor: "pointer", padding: "0 4px" }}>×</button>
+            </div>
+            <p style={{ fontSize: 13, color: "#475569", lineHeight: 1.5, margin: "0 0 12px" }}>
+              Every payment with the <strong>Reminder</strong> toggle on shows up in your calendar with an alert at 9 AM on the day. Subscribe once; it updates itself.
+            </p>
+            {calFeed.error && <div style={{ fontSize: 13, color: C.redDark, marginBottom: 8 }}>{calFeed.error}</div>}
+            {calFeed.webcal && (
+              <>
+                <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
+                  <input readOnly value={calFeed.webcal} onFocus={(e) => e.currentTarget.select()} className="bf-input" style={{ fontSize: 12, padding: "8px 10px" }} />
+                  <button onClick={async () => { try { await navigator.clipboard.writeText(calFeed.webcal); setCalFeed((c) => ({ ...c, copied: true })); } catch { /* ignore */ } }} className="bf-btn"
+                    style={{ border: "none", borderRadius: 8, padding: "0 14px", background: th.accent, color: "#fff", fontSize: 12, fontWeight: 700, whiteSpace: "nowrap" }}>{calFeed.copied ? "Copied" : "Copy"}</button>
+                </div>
+                <a href={calFeed.webcal} className="bf-btn" style={{ display: "inline-block", marginBottom: 12, padding: "8px 14px", borderRadius: 8, border: `1.5px solid ${th.accent}`, color: th.accent, fontSize: 12, fontWeight: 700, textDecoration: "none" }}>Open in Calendar</a>
+                <div style={{ fontSize: 12, color: "#64748b", lineHeight: 1.6 }}>
+                  <div><strong>iPhone:</strong> tap Open in Calendar, or Settings → Calendar → Accounts → Add Subscribed Calendar and paste the link.</div>
+                  <div><strong>Mac:</strong> Calendar → File → New Calendar Subscription, paste the link.</div>
+                  <div><strong>Google Calendar:</strong> Other calendars → From URL, paste the link (use https instead of webcal).</div>
+                </div>
+              </>
+            )}
+            {!calFeed.webcal && !calFeed.error && <div style={{ fontSize: 13, color: "#94a3b8" }}>Loading…</div>}
+          </div>
+        </div>
+      )}
 
       {/* Theme picker */}
       {showThemePicker && (
