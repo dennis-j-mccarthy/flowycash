@@ -283,7 +283,6 @@ export default function BudgetForecast() {
   const [showTagPills, setShowTagPills] = useState(false);
   const [filterTag, setFilterTag] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [showSearch, setShowSearch] = useState(false);
   const [filterType, setFilterType] = useState<"all" | "expense" | "income">("all");
   const [askOpen, setAskOpen] = useState(false);
   const [askText, setAskText] = useState("");
@@ -706,6 +705,7 @@ export default function BudgetForecast() {
       setAskActions(edits);
       setAskHistory((h) => [...h, { role: "user" as const, text: q }, { role: "assistant" as const, text: reply }].slice(-8));
       setAskText("");
+      setSearchQuery("");
     } catch (e) {
       setAskReply(`Couldn't reach the assistant: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
@@ -721,7 +721,7 @@ export default function BudgetForecast() {
       const { year, month } = pdk(a.date);
       setCY(year); setCM(month); setZoomWeek(null); setZoomDay(a.date);
     } else if (a.kind === "search" && a.query) {
-      setShowSearch(true); setSearchQuery(a.query);
+      setAskOpen(true); setAskText(a.query); setSearchQuery(a.query);
     }
   }
 
@@ -802,6 +802,10 @@ export default function BudgetForecast() {
     }
   }
 
+  // A short phrase is a search; anything longer or with punctuation is for the assistant.
+  function looksLikeSentence(q: string): boolean {
+    return q.trim().split(/\s+/).length > 3 || /[?!.,]/.test(q);
+  }
   function fuzzyMatch(q: string, target: string): boolean {
     if (!q) return true;
     const ql = q.toLowerCase().trim();
@@ -1299,15 +1303,11 @@ export default function BudgetForecast() {
           </span>
           <button onClick={nextM} className="bf-btn bf-monthnav" style={{ width: 40, height: 40, borderRadius: "50%", border: "none", background: "rgba(255,255,255,0.15)", fontSize: 22, color: th.headerText, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>›</button>
           <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
-            <button onClick={() => { setShowSearch((v) => { if (v) setSearchQuery(""); return !v; }); }} className="bf-btn" title="Search this month"
-              style={{ width: 32, height: 32, borderRadius: "50%", border: showSearch || searchQuery ? `1.5px solid ${th.accent}` : "1.5px solid rgba(255,255,255,0.3)", background: showSearch || searchQuery ? "rgba(255,255,255,0.9)" : "rgba(255,255,255,0.1)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={showSearch || searchQuery ? th.headerBg : th.headerText} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-            </button>
             <button data-tour="tags" onClick={() => setShowTagPills((v) => !v)} className="bf-btn" title="Tags"
               style={{ width: 32, height: 32, borderRadius: "50%", border: showTagPills ? `1.5px solid ${th.accent}` : "1.5px solid rgba(255,255,255,0.3)", background: showTagPills ? "rgba(255,255,255,0.9)" : "rgba(255,255,255,0.1)", display: "flex", alignItems: "center", justifyContent: "center" }}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={showTagPills ? th.headerBg : th.headerText} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
             </button>
-            <button onClick={() => setAskOpen((v) => !v)} className="bf-btn" title="Ask or tell Flowy"
+            <button onClick={() => setAskOpen((v) => !v)} className="bf-btn" title="Search, ask, or tell Flowy"
               style={{ width: 32, height: 32, borderRadius: "50%", border: askOpen ? `1.5px solid ${th.accent}` : "1.5px solid rgba(255,255,255,0.3)", background: askOpen ? "rgba(255,255,255,0.9)" : "rgba(255,255,255,0.1)", display: "flex", alignItems: "center", justifyContent: "center" }}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={askOpen ? th.headerBg : th.headerText} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M19 17l.7 2 2 .7-2 .7-.7 2-.7-2-2-.7 2-.7z"/></svg>
             </button>
@@ -1445,65 +1445,21 @@ export default function BudgetForecast() {
         </div>
       )}
 
-      {/* Search bar */}
-      {showSearch && (
-        <div style={{ flexShrink: 0, display: "flex", alignItems: "center", gap: 8, padding: "6px 8px", marginBottom: 4, background: "#f1f5f9", borderRadius: 8, border: "1px solid #e2e8f0" }}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#64748b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-          <input autoFocus value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} onKeyDown={(e) => { if (e.key === "Escape") { setSearchQuery(""); setShowSearch(false); } }}
-            placeholder={`Search ${MONTHS[cM]} ${cY}…`}
-            style={{ flex: 1, border: "none", background: "transparent", fontSize: 13, color: "#1e293b", outline: "none", fontFamily: "inherit" }} />
-          {(() => {
-            const matchCount = (state.transactions || []).filter((tx) => searchQuery.trim() && fuzzyMatch(searchQuery, tx.name || "")).length;
-            return searchQuery.trim() ? <span style={{ fontSize: 11, color: "#64748b" }}>{matchCount} match{matchCount === 1 ? "" : "es"}</span> : null;
-          })()}
-          <button onClick={() => { setSearchQuery(""); setShowSearch(false); }} className="bf-btn" style={{ border: "none", background: "none", color: "#94a3b8", fontSize: 14, cursor: "pointer", padding: "0 4px", fontWeight: 700 }}>×</button>
-        </div>
-      )}
-      {/* Search results: where each match falls this month, or the next time it falls */}
-      {showSearch && searchQuery.trim() && (() => {
-        const hits = data.flatMap((dd) => dd.transactions.filter((tx) => fuzzyMatch(searchQuery, tx.name || "")).map((tx) => ({ tx, date: dd.date })));
-        if (hits.length === 0) {
-          const nextStart = dkey(cM === 11 ? cY + 1 : cY, cM === 11 ? 0 : cM + 1, 1);
-          const farY = cM + 6 > 11 ? cY + 1 : cY; const farM = (cM + 6) % 12;
-          const upcoming = state.transactions.filter((tx) => fuzzyMatch(searchQuery, tx.name || ""))
-            .flatMap((tx) => getOccurrences(tx.startDate, tx.recurrence, nextStart, dkey(farY, farM, dim(farY, farM)), tx.endDate).map((d) => ({ tx, date: (state.overrides[`${tx.id}::${d}`] as OverrideData | undefined)?.movedTo || d })))
-            .sort((a, b) => a.date.localeCompare(b.date)).slice(0, 3);
-          return (
-            <div style={{ flexShrink: 0, padding: "6px 10px", marginBottom: 6, fontSize: 12, color: "#64748b", background: "#fff", borderRadius: 8, border: "1px solid #e2e8f0" }}>
-              Nothing matching &ldquo;{searchQuery}&rdquo; in {MONTHS[cM]}.
-              {upcoming.length > 0 && <> Next: {upcoming.map((u, i) => <span key={i}><button onClick={() => { const { year, month } = pdk(u.date); setCY(year); setCM(month); setZoomDay(u.date); }} className="bf-btn" style={{ border: "none", background: "none", padding: 0, color: th.accent, fontWeight: 600, fontSize: 12, textDecoration: "underline" }}>{u.tx.name} on {friendlyDate(u.date)}</button>{i < upcoming.length - 1 ? ", " : ""}</span>)}</>}
-            </div>
-          );
-        }
-        return (
-          <div style={{ flexShrink: 0, display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 6 }}>
-            {hits.map(({ tx, date }, i) => (
-              <button key={i} onClick={() => { setZoomDay(date); setExpandedDays((prev) => new Set(prev).add(date)); }} className="bf-btn"
-                style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 12px", borderRadius: 999, border: "1px solid #e2e8f0", background: "#fff", fontSize: 12, color: "#1e293b" }}>
-                <span style={{ fontWeight: 600 }}>{tx.name}</span>
-                <span style={{ color: "#64748b" }}>{friendlyDate(date)}</span>
-                <span style={{ fontWeight: 700, fontVariantNumeric: "tabular-nums", color: tx.type === "income" ? C.greenDark : C.redDark }}>{fmt(Math.abs(tx.amount))}</span>
-              </button>
-            ))}
-          </div>
-        );
-      })()}
-
       {/* Ask bar: type or dictate a question or a change */}
       {askOpen && (
         <div style={{ flexShrink: 0, marginBottom: 8, background: "#fff", borderRadius: 12, border: `1.5px solid ${th.accent}44`, boxShadow: "0 4px 16px rgba(0,0,0,0.06)" }}>
           <form onSubmit={(e) => { e.preventDefault(); askAssistant(askText); }} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px" }}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={th.accent} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-            <input autoFocus value={askText} onChange={(e) => setAskText(e.target.value)} disabled={askBusy}
-              onKeyDown={(e) => { if (e.key === "Escape") { setAskOpen(false); setAskReply(""); setAskActions([]); } }}
-              placeholder="Where is the mortgage this month?  Move Bob's payment to Tuesday."
+            <input autoFocus value={askText} onChange={(e) => { setAskText(e.target.value); setSearchQuery(looksLikeSentence(e.target.value) ? "" : e.target.value); setAskReply(""); setAskActions([]); }} disabled={askBusy}
+              onKeyDown={(e) => { if (e.key === "Escape") { setAskOpen(false); setAskText(""); setSearchQuery(""); setAskReply(""); setAskActions([]); } }}
+              placeholder="Search, ask, or tell Flowy: mortgage · where is rent this month? · move Bob to Tuesday"
               style={{ flex: 1, minWidth: 0, border: "none", background: "transparent", fontSize: 15, color: "#1e293b", outline: "none", fontFamily: "inherit" }} />
             <button type="button" onClick={startListening} className="bf-btn" title="Speak"
               style={{ width: 30, height: 30, borderRadius: "50%", border: listening ? "1.5px solid #ef4444" : "1.5px solid #e2e8f0", background: listening ? "#fee2e2" : "#fff", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, animation: listening ? "pulse 1s infinite" : "none" }}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={listening ? "#ef4444" : "#64748b"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
             </button>
             <button type="submit" disabled={askBusy || !askText.trim()} className="bf-btn" style={{ border: "none", borderRadius: 8, padding: "6px 12px", background: askBusy || !askText.trim() ? "#e2e8f0" : th.accent, color: askBusy || !askText.trim() ? "#94a3b8" : "#fff", fontSize: 13, fontWeight: 700 }}>{askBusy ? "…" : "Ask"}</button>
-            <button type="button" onClick={() => { setAskOpen(false); setAskReply(""); setAskActions([]); }} className="bf-btn" style={{ border: "none", background: "none", color: "#94a3b8", fontSize: 16, cursor: "pointer", padding: "0 4px", fontWeight: 700 }}>×</button>
+            <button type="button" onClick={() => { setAskOpen(false); setAskText(""); setSearchQuery(""); setAskReply(""); setAskActions([]); }} className="bf-btn" style={{ border: "none", background: "none", color: "#94a3b8", fontSize: 16, cursor: "pointer", padding: "0 4px", fontWeight: 700 }}>×</button>
           </form>
           {(askReply || askActions.length > 0) && (
             <div style={{ borderTop: "1px solid #f1f5f9", padding: "10px 14px 12px" }}>
@@ -1526,6 +1482,36 @@ export default function BudgetForecast() {
           )}
         </div>
       )}
+
+      {/* Search results: where each match falls this month, or the next time it falls */}
+      {askOpen && searchQuery.trim() && !askBusy && !askReply && (() => {
+        const hits = data.flatMap((dd) => dd.transactions.filter((tx) => fuzzyMatch(searchQuery, tx.name || "")).map((tx) => ({ tx, date: dd.date })));
+        if (hits.length === 0) {
+          const nextStart = dkey(cM === 11 ? cY + 1 : cY, cM === 11 ? 0 : cM + 1, 1);
+          const farY = cM + 6 > 11 ? cY + 1 : cY; const farM = (cM + 6) % 12;
+          const upcoming = state.transactions.filter((tx) => fuzzyMatch(searchQuery, tx.name || ""))
+            .flatMap((tx) => getOccurrences(tx.startDate, tx.recurrence, nextStart, dkey(farY, farM, dim(farY, farM)), tx.endDate).map((d) => ({ tx, date: (state.overrides[`${tx.id}::${d}`] as OverrideData | undefined)?.movedTo || d })))
+            .sort((a, b) => a.date.localeCompare(b.date)).slice(0, 3);
+          return (
+            <div style={{ flexShrink: 0, padding: "6px 10px", marginBottom: 6, fontSize: 12, color: "#64748b", background: "#fff", borderRadius: 8, border: "1px solid #e2e8f0" }}>
+              Nothing matching &ldquo;{searchQuery}&rdquo; in {MONTHS[cM]}.
+              {upcoming.length > 0 && <> Next: {upcoming.map((u, i) => <span key={i}><button onClick={() => { const { year, month } = pdk(u.date); setCY(year); setCM(month); setZoomDay(u.date); }} className="bf-btn" style={{ border: "none", background: "none", padding: 0, color: th.accent, fontWeight: 600, fontSize: 12, textDecoration: "underline" }}>{u.tx.name} on {friendlyDate(u.date)}</button>{i < upcoming.length - 1 ? ", " : ""}</span>)}</>}
+            </div>
+          );
+        }
+        return (
+          <div style={{ flexShrink: 0, display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8, marginTop: -2 }}>
+            {hits.map(({ tx, date }, i) => (
+              <button key={i} onClick={() => { setZoomDay(date); setExpandedDays((prev) => new Set(prev).add(date)); }} className="bf-btn"
+                style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 12px", borderRadius: 999, border: "1px solid #e2e8f0", background: "#fff", fontSize: 12, color: "#1e293b" }}>
+                <span style={{ fontWeight: 600 }}>{tx.name}</span>
+                <span style={{ color: "#64748b" }}>{friendlyDate(date)}</span>
+                <span style={{ fontWeight: 700, fontVariantNumeric: "tabular-nums", color: tx.type === "income" ? C.greenDark : C.redDark }}>{fmt(Math.abs(tx.amount))}</span>
+              </button>
+            ))}
+          </div>
+        );
+      })()}
 
       {/* Type filter indicator */}
       {filterType !== "all" && (
@@ -2817,6 +2803,7 @@ export default function BudgetForecast() {
                             <span style={{ width: 14, flexShrink: 0, fontSize: 13, color: tx.recurrence !== "none" ? "#64748b" : "transparent", lineHeight: 1.3, textAlign: "center" }}>{tx.recurrence !== "none" ? "↻" : ""}</span>
                             <span style={{ flex: "1 1 auto", minWidth: 36, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>{tx.name}</span>
                             {(tx as any).note && <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>}
+                            
                             {showTagPills && ((tx as any).tags || "").split(",").filter((s: string) => s.trim()).map((tag: string, ti: number) => (
                               <span key={ti} title={tag.trim()} style={{ color: tagColor(tag.trim()).text, flexShrink: 0, display: "inline-flex", alignItems: "center", marginTop: 2 }}><TagIconSvg tag={tag.trim()} size={fontSize - 2} /></span>
                             ))}
