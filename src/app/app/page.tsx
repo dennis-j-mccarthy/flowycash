@@ -2864,7 +2864,7 @@ export default function BudgetForecast() {
                     const isLogoCell = `${wi}-${di}` === lastEmptyKey;
                     return (
                       <div key={`${wi}-${di}`} style={{ minHeight: 0, background: th.calBg, borderTop: `1px solid ${th.gridBorder}`, borderRight: di < 6 ? `1px solid ${th.gridBorder}` : "none", display: "flex", alignItems: "center", justifyContent: "center", padding: 8 }}>
-                        {isLogoCell && <img src="/logo.png" alt="" style={{ maxWidth: "90%", maxHeight: "80%", objectFit: "contain" }} />}
+                        {isLogoCell && <img src="/logo.png" alt="" style={{ maxWidth: "min(60%, 110px)", maxHeight: "min(60%, 80px)", objectFit: "contain", opacity: 0.85 }} />}
                       </div>
                     );
                   }
