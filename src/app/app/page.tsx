@@ -1292,6 +1292,25 @@ export default function BudgetForecast() {
     blue: "#3b82f6", blueDark: "#2563eb", blueBg: "rgba(59,130,246,0.06)", blueBorder: "rgba(59,130,246,0.2)",
   };
 
+  // Signed out and not in demo: say so instead of showing an empty $0 calendar
+  // that looks like a wiped account.
+  if (isLoaded && !isSignedIn && !demo)
+    return (
+      <div style={{ fontFamily: 'var(--font-inter), Inter, sans-serif', minHeight: "100vh", background: "#f8fafc", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+        <style>{css}</style>
+        <div style={{ background: "#fff", borderRadius: 20, padding: "36px 32px", width: 420, maxWidth: "100%", boxShadow: "0 20px 60px rgba(0,0,0,0.08)", border: "1px solid #e2e8f0", textAlign: "center" }}>
+          <img src="/logo.png" alt="Flowy Cash" style={{ width: 120, marginBottom: 18 }} />
+          <div style={{ fontSize: 22, fontWeight: 800, color: "#1e293b", letterSpacing: "-0.02em", marginBottom: 8 }}>Sign in to see your calendar</div>
+          <div style={{ fontSize: 14, color: "#64748b", lineHeight: 1.5, marginBottom: 24 }}>Your payments, balances, and forecast are saved to your account. Nothing shows here until you sign in.</div>
+          <a href="/sign-in" style={{ display: "block", background: th.headerBg, color: "#fff", borderRadius: 12, padding: "14px 18px", fontSize: 15, fontWeight: 700, textDecoration: "none", marginBottom: 10 }}>Sign in</a>
+          <button onClick={() => { localStorage.setItem("flowycash-demo", "true"); if (!demoState) setDemoState(buildDemoData()); setDemo(true); }} className="bf-btn"
+            style={{ width: "100%", background: "#fff", color: "#64748b", border: "1.5px solid #e2e8f0", borderRadius: 12, padding: "12px 18px", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
+            Try the demo instead
+          </button>
+        </div>
+      </div>
+    );
+
   return (
     <div style={{ fontFamily: 'var(--font-inter), Inter, sans-serif', width: "100%", margin: 0, padding: "24px 32px", color: "#1e293b", height: "100vh", boxSizing: "border-box", display: "flex", flexDirection: "column", overflow: "hidden" }}>
       <style>{css}</style>
