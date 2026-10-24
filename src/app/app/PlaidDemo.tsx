@@ -201,28 +201,25 @@ export default function PlaidDemo({ onClose }: { onClose: () => void }) {
   })();
 
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.72)", backdropFilter: "blur(8px)", zIndex: 70, display: "flex", alignItems: "center", justifyContent: "center", padding: 16, animation: "panelIn 0.18s ease" }} onClick={onClose}>
-      <div onClick={(e) => e.stopPropagation()} style={{ display: "flex", gap: 28, alignItems: "center", maxWidth: "100%", flexWrap: "wrap", justifyContent: "center" }}>
-        <div style={{ color: "#fff", width: 280, display: "flex", flexDirection: "column", gap: 10 }}>
-          <span style={{ fontSize: 11, fontWeight: 700, color: GS, textTransform: "uppercase", letterSpacing: "0.1em" }}>Preview · bank-linked Flowy Cash</span>
-          <span style={{ fontSize: 26, fontWeight: 800, letterSpacing: "-0.03em", lineHeight: 1.1 }}>Know, don&rsquo;t worry.</span>
-          <span style={{ fontSize: 13, color: "#cbd5e1", lineHeight: 1.5 }}>The bank reconciles the past every night. The calendar forecasts the future. You answer one question a day. Sample data; nothing here is saved.</span>
-          <div style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 6 }}>
-            {STEPS.map((s, i) => (
-              <button key={s} onClick={() => setStep(i)} className="bf-btn" style={{ textAlign: "left", background: i === step ? "rgba(255,255,255,0.14)" : "transparent", border: "none", borderRadius: 8, padding: "7px 10px", color: i === step ? "#fff" : "#94a3b8", fontFamily: "inherit", fontSize: 13, fontWeight: i === step ? 700 : 500, cursor: "pointer", display: "flex", gap: 10, alignItems: "center" }}>
-                <span style={{ width: 20, height: 20, borderRadius: "50%", background: i === step ? "#10b981" : "rgba(255,255,255,0.15)", color: "#fff", fontSize: 11, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center" }}>{i + 1}</span>{s}
-              </button>
-            ))}
-          </div>
-          <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-            <button onClick={() => setStep((s) => Math.max(0, s - 1))} disabled={step === 0} className="bf-btn" style={{ border: "1px solid rgba(255,255,255,0.3)", background: "transparent", color: "#fff", borderRadius: 8, padding: "8px 14px", fontFamily: "inherit", fontSize: 12, fontWeight: 700, cursor: "pointer", opacity: step === 0 ? 0.4 : 1 }}>Back</button>
-            <button onClick={() => (step < STEPS.length - 1 ? setStep(step + 1) : onClose())} className="bf-btn" style={{ border: "none", background: "#10b981", color: "#fff", borderRadius: 8, padding: "8px 14px", fontFamily: "inherit", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>{step < STEPS.length - 1 ? "Next" : "Close"}</button>
-            <button onClick={onClose} className="bf-btn" style={{ marginLeft: "auto", border: "none", background: "transparent", color: "#94a3b8", fontFamily: "inherit", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Exit</button>
-          </div>
-        </div>
-        <div style={{ width: 340, height: 640, maxHeight: "92vh", background: "#f8fafc", borderRadius: 36, border: "9px solid #0f172a", boxSizing: "border-box", overflow: "hidden", boxShadow: "0 30px 80px rgba(0,0,0,0.5)", color: INK, fontFamily: "inherit" }}>
-          {screen}
-        </div>
+    <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.72)", backdropFilter: "blur(8px)", zIndex: 70, display: "flex", flexDirection: "column", alignItems: "center", padding: "16px 16px 24px", gap: 14, overflowY: "auto", animation: "panelIn 0.18s ease" }} onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 820, background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.14)", borderRadius: 14, padding: "10px 12px", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", color: "#fff" }}>
+        <span style={{ fontSize: 11, fontWeight: 700, color: GS, textTransform: "uppercase", letterSpacing: "0.1em", marginRight: 6 }}>Plaid demo</span>
+        {STEPS.map((s, i) => (
+          <button key={s} onClick={() => setStep(i)} className="bf-btn" style={{ background: i === step ? "#10b981" : "rgba(255,255,255,0.12)", border: "none", borderRadius: 999, padding: "6px 12px", color: "#fff", fontFamily: "inherit", fontSize: 12, fontWeight: 700, cursor: "pointer", display: "flex", gap: 6, alignItems: "center" }}>
+            <span style={{ opacity: 0.7 }}>{i + 1}</span>{s}
+          </button>
+        ))}
+        <span style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
+          <button onClick={() => setStep((s) => Math.max(0, s - 1))} disabled={step === 0} className="bf-btn" style={{ border: "1px solid rgba(255,255,255,0.3)", background: "transparent", color: "#fff", borderRadius: 999, padding: "6px 12px", fontFamily: "inherit", fontSize: 12, fontWeight: 700, cursor: "pointer", opacity: step === 0 ? 0.4 : 1 }}>Back</button>
+          <button onClick={() => (step < STEPS.length - 1 ? setStep(step + 1) : onClose())} className="bf-btn" style={{ border: "1px solid rgba(255,255,255,0.3)", background: "transparent", color: "#fff", borderRadius: 999, padding: "6px 12px", fontFamily: "inherit", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>{step < STEPS.length - 1 ? "Next" : "Done"}</button>
+          <button onClick={onClose} className="bf-btn" aria-label="Close" style={{ border: "none", background: "rgba(255,255,255,0.12)", color: "#fff", borderRadius: 999, width: 30, height: 30, fontFamily: "inherit", fontSize: 16, fontWeight: 700, cursor: "pointer" }}>×</button>
+        </span>
+      </div>
+      <div onClick={(e) => e.stopPropagation()} style={{ fontSize: 12, color: "#cbd5e1", textAlign: "center", maxWidth: 560, lineHeight: 1.5 }}>
+        <strong style={{ color: "#fff" }}>Know, don&rsquo;t worry.</strong> The bank reconciles the past every night, the calendar forecasts the future, you answer one question a day. Sample data; nothing here is saved.
+      </div>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: 340, height: 640, maxHeight: "calc(100vh - 150px)", flexShrink: 0, background: "#f8fafc", borderRadius: 36, border: "9px solid #0f172a", boxSizing: "border-box", overflow: "hidden", boxShadow: "0 30px 80px rgba(0,0,0,0.5)", color: INK, fontFamily: "inherit" }}>
+        {screen}
       </div>
     </div>
   );

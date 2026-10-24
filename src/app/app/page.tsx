@@ -369,6 +369,7 @@ export default function BudgetForecast() {
   const [chartMonths, setChartMonths] = useState(1);
   const [showThemePicker, setShowThemePicker] = useState(false);
   const [showPlaidDemo, setShowPlaidDemo] = useState(false);
+  const [showLabs, setShowLabs] = useState(false);
   const [calFeed, setCalFeed] = useState<{ open: boolean; url: string; webcal: string; error: string; copied: boolean }>({ open: false, url: "", webcal: "", error: "", copied: false });
   const [showMonthNote, setShowMonthNote] = useState(false);
   const [tutorialStep, setTutorialStep] = useState(-1);
@@ -1283,7 +1284,6 @@ export default function BudgetForecast() {
     .ask-dots span:nth-child(3) { animation-delay: 0.3s; }
     .ask-fab { display: none; }
     @media (max-width: 999px) { .ask-fab { display: flex; } }
-    @media (max-width: 600px) { .footer-debt { display: none; } }
   `;
 
   const th = THEMES[theme] || THEMES.forest;
@@ -2984,48 +2984,8 @@ export default function BudgetForecast() {
             style={{ width: 28, height: 28, borderRadius: "50%", border: "1.5px solid #d1d5db", background: "#fff", color: "#64748b", display: "flex", alignItems: "center", justifyContent: "center" }}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a10 10 0 0 0 0 20c1.1 0 2-.9 2-2v-1a2 2 0 0 1 2-2h2a4 4 0 0 0 4-4c0-6-4.5-11-10-11z"/><circle cx="7.5" cy="10.5" r="1.2" fill="currentColor"/><circle cx="12" cy="7" r="1.2" fill="currentColor"/><circle cx="16.5" cy="10.5" r="1.2" fill="currentColor"/></svg>
           </button>
-          <button onClick={() => { setDebtAmount(""); setDebtChunks([]); setDebtName("Debt Repayment"); setDebtStep(0); openPanel("debt-distribution"); }} className="bf-btn footer-debt"
-            style={{ border: "none", background: "none", padding: 0, color: "#64748b", fontSize: 11, fontWeight: 600, textDecoration: "underline", textUnderlineOffset: 3, cursor: "pointer", whiteSpace: "nowrap" }}>
-            Distribute a debt
-          </button>
-          <button onClick={async () => {
-            setCalFeed({ open: true, url: "", webcal: "", error: "", copied: false });
-            if (demo || !isSignedIn) { setCalFeed((c) => ({ ...c, error: "Sign in to get your personal calendar link." })); return; }
-            try {
-              const r = await fetch("/api/calendar");
-              const d = await r.json();
-              if (!r.ok) throw new Error(d?.error || `HTTP ${r.status}`);
-              setCalFeed((c) => ({ ...c, url: d.url, webcal: d.webcal }));
-            } catch (e) { setCalFeed((c) => ({ ...c, error: e instanceof Error ? e.message : String(e) })); }
-          }} className="bf-btn footer-debt"
-            style={{ border: "none", background: "none", padding: 0, color: "#64748b", fontSize: 11, fontWeight: 600, textDecoration: "underline", textUnderlineOffset: 3, cursor: "pointer", whiteSpace: "nowrap" }}>
-            Calendar feed
-          </button>
-          <button onClick={() => setShowPlaidDemo(true)} className="bf-btn"
-            style={{ border: "none", background: "none", padding: 0, color: th.accent, fontSize: 11, fontWeight: 700, textDecoration: "underline", textUnderlineOffset: 3, cursor: "pointer", whiteSpace: "nowrap" }}>
-            Plaid demo
-          </button>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <a href="/api/export" download className="bf-btn"
-            style={{ padding: "4px 10px", borderRadius: 20, border: "1.5px solid #d1d5db", background: "#fff", color: "#64748b", fontSize: 10, fontWeight: 600, textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 4 }}>
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-            Backup
-          </a>
-          <label className="bf-btn"
-            style={{ padding: "4px 10px", borderRadius: 20, border: "1.5px solid #d1d5db", background: "#fff", color: "#64748b", fontSize: 10, fontWeight: 600, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4 }}>
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-            Restore
-            <input type="file" accept=".json" hidden onChange={async (e) => {
-              const file = e.target.files?.[0];
-              if (!file) return;
-              const text = await file.text();
-              if (!confirm("This will replace ALL current data. Continue?")) return;
-              await callApi("/api/import", { method: "POST", body: text });
-              await reload();
-              e.target.value = "";
-            }} />
-          </label>
           <button onClick={() => { setTutorialStep(0); }} className="bf-btn"
             style={{ padding: "4px 10px", borderRadius: 20, border: "1.5px solid #d1d5db", background: "#fff", color: "#64748b", fontSize: 10, fontWeight: 600 }}>
             ?
@@ -3036,8 +2996,71 @@ export default function BudgetForecast() {
               Demo
             </button>
           )}
+          <button onClick={() => setShowLabs(true)} className="bf-btn" title="Flowy Cash Labs"
+            style={{ padding: "4px 12px", borderRadius: 20, border: `1.5px solid ${th.accent}`, background: "#fff", color: th.headerBg, fontSize: 10, fontWeight: 700, display: "inline-flex", alignItems: "center", gap: 5, letterSpacing: "0.02em" }}>
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 3h6"/><path d="M10 3v6.5L4.6 18.5A2 2 0 0 0 6.3 21h11.4a2 2 0 0 0 1.7-2.5L14 9.5V3"/><path d="M7.5 15h9"/></svg>
+            Labs
+          </button>
         </div>
       </div>
+
+      {/* Flowy Cash Labs: backup, restore, and the experiments */}
+      {showLabs && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.35)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, animation: "panelIn 0.15s ease" }}
+          onClick={() => setShowLabs(false)}>
+          <div style={{ background: "#fff", borderRadius: 16, padding: "20px 22px", width: 380, maxWidth: "92vw", boxShadow: "0 20px 60px rgba(0,0,0,0.15)" }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+              <span style={{ fontSize: 15, fontWeight: 700, color: "#1e293b", display: "flex", alignItems: "center", gap: 8 }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={th.headerBg} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 3h6"/><path d="M10 3v6.5L4.6 18.5A2 2 0 0 0 6.3 21h11.4a2 2 0 0 0 1.7-2.5L14 9.5V3"/><path d="M7.5 15h9"/></svg>
+                Flowy Cash Labs
+              </span>
+              <button onClick={() => setShowLabs(false)} className="bf-btn" style={{ border: "none", background: "none", fontSize: 20, color: "#94a3b8", cursor: "pointer", padding: "0 4px" }}>×</button>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <button onClick={() => { setShowLabs(false); setShowPlaidDemo(true); }} className="bf-btn" style={{ textAlign: "left", display: "flex", flexDirection: "column", gap: 2, padding: "10px 12px", borderRadius: 10, border: `1.5px solid ${th.accent}`, background: th.totalBg, cursor: "pointer", fontFamily: "inherit" }}>
+                <span style={{ fontSize: 14, fontWeight: 600, color: "#1e293b" }}>Plaid demo</span>
+                <span style={{ fontSize: 12, color: "#64748b" }}>Preview the bank-linked Flowy Cash on sample data.</span>
+              </button>
+              <button onClick={async () => {
+                setShowLabs(false);
+                setCalFeed({ open: true, url: "", webcal: "", error: "", copied: false });
+                if (demo || !isSignedIn) { setCalFeed((c) => ({ ...c, error: "Sign in to get your personal calendar link." })); return; }
+                try {
+                  const r = await fetch("/api/calendar");
+                  const d = await r.json();
+                  if (!r.ok) throw new Error(d?.error || `HTTP ${r.status}`);
+                  setCalFeed((c) => ({ ...c, url: d.url, webcal: d.webcal }));
+                } catch (e) { setCalFeed((c) => ({ ...c, error: e instanceof Error ? e.message : String(e) })); }
+              }} className="bf-btn" style={{ textAlign: "left", display: "flex", flexDirection: "column", gap: 2, padding: "10px 12px", borderRadius: 10, border: "1.5px solid #e2e8f0", background: "#fff", cursor: "pointer", fontFamily: "inherit" }}>
+                <span style={{ fontSize: 14, fontWeight: 600, color: "#1e293b" }}>Calendar feed</span>
+                <span style={{ fontSize: 12, color: "#64748b" }}>Subscribe to your flagged items in Apple or Google Calendar.</span>
+              </button>
+              <button onClick={() => { setShowLabs(false); setDebtAmount(""); setDebtChunks([]); setDebtName("Debt Repayment"); setDebtStep(0); openPanel("debt-distribution"); }} className="bf-btn" style={{ textAlign: "left", display: "flex", flexDirection: "column", gap: 2, padding: "10px 12px", borderRadius: 10, border: "1.5px solid #e2e8f0", background: "#fff", cursor: "pointer", fontFamily: "inherit" }}>
+                <span style={{ fontSize: 14, fontWeight: 600, color: "#1e293b" }}>Distribute a debt</span>
+                <span style={{ fontSize: 12, color: "#64748b" }}>Spread a lump sum across the days that can absorb it.</span>
+              </button>
+              <a href="/api/export" download className="bf-btn" style={{ textDecoration: "none", display: "flex", flexDirection: "column", gap: 2, padding: "10px 12px", borderRadius: 10, border: "1.5px solid #e2e8f0", background: "#fff", cursor: "pointer" }}>
+                <span style={{ fontSize: 14, fontWeight: 600, color: "#1e293b" }}>Backup</span>
+                <span style={{ fontSize: 12, color: "#64748b" }}>Download everything as one JSON file.</span>
+              </a>
+              <label className="bf-btn" style={{ display: "flex", flexDirection: "column", gap: 2, padding: "10px 12px", borderRadius: 10, border: "1.5px solid #e2e8f0", background: "#fff", cursor: "pointer" }}>
+                <span style={{ fontSize: 14, fontWeight: 600, color: "#1e293b" }}>Restore</span>
+                <span style={{ fontSize: 12, color: "#64748b" }}>Load a backup. Replaces your current data.</span>
+                <input type="file" accept=".json" hidden onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  const text = await file.text();
+                  if (!confirm("This will replace ALL current data. Continue?")) return;
+                  await callApi("/api/import", { method: "POST", body: text });
+                  await reload();
+                  e.target.value = "";
+                  setShowLabs(false);
+                }} />
+              </label>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showPlaidDemo && <PlaidDemo onClose={() => setShowPlaidDemo(false)} />}
 
@@ -3162,7 +3185,7 @@ export default function BudgetForecast() {
           { title: "Daily Balance", text: "The bar at the bottom of each day shows its running balance. Click it to set a balance reset.", icon: "💰", target: "[data-tour='calendar']", pos: "top" },
           { title: "Drag to Move", text: "Drag any transaction to a different day. For recurring items, choose 'just this one' or 'all future'.", icon: "✋", target: "[data-tour='calendar']", pos: "top" },
           { title: "Negative Day Advice", text: "The 💡 lightbulb appears on negative days. Click for strategies to stay above zero.", icon: "💡", target: "[data-tour='calendar']", pos: "top" },
-          { title: "Backup & Restore", text: "Download your data anytime. Restore from a backup. The palette icon, font size, and debt distribution are here too.", icon: "💾", target: "[data-tour='footer']", pos: "top" },
+          { title: "Backup & Restore", text: "Download your data anytime. Restore from a backup. Backup and Restore live under Labs, with the debt tool, calendar feed, and the Plaid demo.", icon: "💾", target: "[data-tour='footer']", pos: "top" },
           { title: "You're Ready!", text: "Explore your month. Click transactions to edit. Drag to reschedule. You got this.", icon: "🚀", target: "[data-tour='logo']", pos: "bottom" },
         ];
         const step = steps[tutorialStep];
