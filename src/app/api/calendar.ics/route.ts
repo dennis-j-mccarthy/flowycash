@@ -1,5 +1,5 @@
 import { timingSafeEqual } from "crypto";
-import { calendarToken } from "@/lib/calendar";
+import { calendarToken, calendarSecret } from "@/lib/calendar";
 import { NextRequest, NextResponse } from "next/server";
 import { expandOccurrences } from "@/lib/notify";
 import { loadState } from "@/lib/load-state";
@@ -36,7 +36,7 @@ function money(v: number) {
 export async function GET(req: NextRequest) {
   const u = req.nextUrl.searchParams.get("u") || "";
   const t = req.nextUrl.searchParams.get("t") || "";
-  if (!u || !t || !process.env.CRON_SECRET) {
+  if (!u || !t || !calendarSecret()) {
     return new NextResponse("Not found", { status: 404 });
   }
   const expected = calendarToken(u);

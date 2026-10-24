@@ -288,9 +288,8 @@ export default function BudgetForecast() {
   const [askOpen, setAskOpen] = useState(false);
   const [askText, setAskText] = useState("");
   const [askBusy, setAskBusy] = useState(false);
-  const [askReply, setAskReply] = useState("");
-  const [askActions, setAskActions] = useState<AssistantAction[]>([]);
-  const [askHistory, setAskHistory] = useState<{ role: "user" | "assistant"; text: string }[]>([]);
+  const [askThread, setAskThread] = useState<{ role: "user" | "assistant"; text: string; actions?: AssistantAction[]; applied?: boolean; error?: boolean }[]>([]);
+  const askThreadRef = useRef<HTMLDivElement | null>(null);
   const [hidePastDays, setHidePastDays] = useState(true);
   const [theme, setTheme] = useState(() => typeof window !== "undefined" ? localStorage.getItem("flowycash-theme") || "forest" : "forest");
   const [tagInput, setTagInput] = useState("");
@@ -370,6 +369,8 @@ export default function BudgetForecast() {
   const [showThemePicker, setShowThemePicker] = useState(false);
   const [showPlaidDemo, setShowPlaidDemo] = useState(false);
   const [showLabs, setShowLabs] = useState(false);
+  const [restoreFile, setRestoreFile] = useState<File | null>(null);
+  const [restoreConfirm, setRestoreConfirm] = useState("");
   const [calFeed, setCalFeed] = useState<{ open: boolean; url: string; webcal: string; error: string; copied: boolean }>({ open: false, url: "", webcal: "", error: "", copied: false });
   const [showMonthNote, setShowMonthNote] = useState(false);
   const [tutorialStep, setTutorialStep] = useState(-1);
@@ -685,17 +686,24 @@ export default function BudgetForecast() {
     rec.start();
   }
 
+  useEffect(() => {
+    const el = askThreadRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [askThread, askBusy]);
+
   async function askAssistant(text: string) {
     const q = text.trim();
     if (!q || askBusy) return;
+    const history = askThread.filter((m) => !m.error).slice(-6).map((m) => ({ role: m.role, text: m.text }));
+    setAskThread((t) => [...t, { role: "user", text: q }]);
+    setAskText("");
+    setSearchQuery("");
     setAskBusy(true);
-    setAskReply("");
-    setAskActions([]);
     try {
       const res = await fetch("/api/assistant", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: q, state, year: cY, month: cM, today: todayKey, demo, history: askHistory.slice(-6) }),
+        body: JSON.stringify({ text: q, state, year: cY, month: cM, today: todayKey, demo, history }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
@@ -705,13 +713,9 @@ export default function BudgetForecast() {
       const edits = actions.filter((a) => !nav.includes(a));
       // Navigation and search need no confirmation.
       for (const a of nav) runNavAction(a);
-      setAskReply(reply);
-      setAskActions(edits);
-      setAskHistory((h) => [...h, { role: "user" as const, text: q }, { role: "assistant" as const, text: reply }].slice(-8));
-      setAskText("");
-      setSearchQuery("");
+      setAskThread((t) => [...t, { role: "assistant", text: reply, actions: edits.length ? edits : undefined }]);
     } catch (e) {
-      setAskReply(`Couldn't reach the assistant: ${e instanceof Error ? e.message : String(e)}`);
+      setAskThread((t) => [...t, { role: "assistant", text: `Couldn't reach the assistant: ${e instanceof Error ? e.message : String(e)}`, error: true }]);
     } finally {
       setAskBusy(false);
     }
@@ -740,9 +744,9 @@ export default function BudgetForecast() {
     return a.kind;
   }
 
-  async function applyAskActions() {
-    const acts = askActions;
-    if (!acts.length) return;
+  async function applyAskActions(msgIndex: number) {
+    const acts = askThread[msgIndex]?.actions || [];
+    if (!acts.length || askThread[msgIndex]?.applied) return;
     setAskBusy(true);
     const touched = new Set<string>();
     const dayBefore = (s: string) => { const { year, month, day } = pdk(s); const d = new Date(year, month, day); d.setDate(d.getDate() - 1); return dkey(d.getFullYear(), d.getMonth(), d.getDate()); };
@@ -797,10 +801,9 @@ export default function BudgetForecast() {
       setExpandedDays((prev) => { const next = new Set(prev); touched.forEach((d) => next.add(d)); return next; });
       const first = Array.from(touched).sort()[0];
       if (first) { const { year, month } = pdk(first); if (year !== cY || month !== cM) { setCY(year); setCM(month); } }
-      setAskActions([]);
-      setAskReply("Done.");
+      setAskThread((t) => t.map((m, i) => (i === msgIndex ? { ...m, applied: true } : m)).concat([{ role: "assistant", text: "Done. The calendar is updated." }]));
     } catch (e) {
-      setAskReply(`Couldn't apply that: ${e instanceof Error ? e.message : String(e)}`);
+      setAskThread((t) => [...t, { role: "assistant", text: `Couldn't apply that: ${e instanceof Error ? e.message : String(e)}`, error: true }]);
     } finally {
       setAskBusy(false);
     }
@@ -1501,54 +1504,75 @@ export default function BudgetForecast() {
         </div>
       )}
 
-      {/* Ask bar: type or dictate a question or a change */}
+      {/* Ask: a conversation with the input at the bottom; short phrases search as you type */}
       {askOpen && (
-        <div style={{ flexShrink: 0, marginBottom: 8, background: "#fff", borderRadius: 12, border: `1.5px solid ${th.accent}44`, boxShadow: "0 4px 16px rgba(0,0,0,0.06)" }}>
-          <form onSubmit={(e) => { e.preventDefault(); askAssistant(askText); }} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px" }}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={th.accent} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-            <input autoFocus value={askText} onChange={(e) => { setAskText(e.target.value); setSearchQuery(looksLikeSentence(e.target.value) ? "" : e.target.value); setAskReply(""); setAskActions([]); }} disabled={askBusy}
-              onKeyDown={(e) => { if (e.key === "Escape") { setAskOpen(false); setAskText(""); setSearchQuery(""); setAskReply(""); setAskActions([]); } }}
-              placeholder="Search, ask, or tell Flowy: mortgage · where is rent this month? · move Bob to Tuesday"
+        <div style={{ flexShrink: 0, marginBottom: 8, background: "#fff", borderRadius: 14, border: `1.5px solid ${th.accent}44`, boxShadow: "0 4px 16px rgba(0,0,0,0.06)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+          {(askThread.length > 0 || askBusy) && (
+            <div ref={askThreadRef} style={{ maxHeight: "42vh", overflowY: "auto", padding: "12px 12px 4px", display: "flex", flexDirection: "column", gap: 8, background: "#f8fafc" }}>
+              {askThread.map((m, i) => (
+                <div key={i} style={{ display: "flex", justifyContent: m.role === "user" ? "flex-end" : "flex-start" }}>
+                  <div style={{ maxWidth: "82%", borderRadius: 14, padding: "9px 13px", fontSize: 14, lineHeight: 1.5,
+                    background: m.role === "user" ? th.headerBg : m.error ? "#fef2f2" : "#fff",
+                    color: m.role === "user" ? "#fff" : m.error ? C.redDark : "#1e293b",
+                    border: m.role === "user" ? "none" : `1px solid ${m.error ? "#fecaca" : "#e2e8f0"}`,
+                    borderBottomRightRadius: m.role === "user" ? 4 : 14, borderBottomLeftRadius: m.role === "user" ? 14 : 4 }}>
+                    <div>{m.text}</div>
+                    {m.actions && m.actions.length > 0 && (
+                      <div style={{ marginTop: 8, borderTop: "1px solid #f1f5f9", paddingTop: 8 }}>
+                        {m.actions.map((a, j) => (
+                          <div key={j} style={{ display: "flex", alignItems: "center", gap: 8, padding: "3px 0", fontSize: 13, color: "#334155" }}>
+                            <span style={{ width: 6, height: 6, borderRadius: "50%", background: m.applied ? C.greenDark : th.accent, flexShrink: 0 }} />
+                            {describeAction(a)}
+                          </div>
+                        ))}
+                        {m.applied ? (
+                          <div style={{ marginTop: 6, fontSize: 12, fontWeight: 700, color: C.greenDark }}>Applied</div>
+                        ) : i === askThread.length - 1 ? (
+                          <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                            <button onClick={() => applyAskActions(i)} disabled={askBusy} className="bf-btn" style={{ border: "none", borderRadius: 8, padding: "7px 14px", background: th.accent, color: "#fff", fontSize: 13, fontWeight: 700 }}>{askBusy ? "Applying…" : "Apply"}</button>
+                            <button onClick={() => setAskThread((t) => t.map((x, k) => (k === i ? { ...x, actions: undefined, text: `${x.text} (not applied)` } : x)))} disabled={askBusy} className="bf-btn" style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "7px 14px", background: "#fff", color: "#64748b", fontSize: 13, fontWeight: 600 }}>Not now</button>
+                          </div>
+                        ) : (
+                          <div style={{ marginTop: 6, fontSize: 12, color: "#94a3b8" }}>Not applied</div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+              {askBusy && (
+                <div style={{ display: "flex", justifyContent: "flex-start" }}>
+                  <div style={{ borderRadius: 14, borderBottomLeftRadius: 4, padding: "10px 13px", background: "#fff", border: "1px solid #e2e8f0", display: "flex", alignItems: "center", gap: 10 }}>
+                    <span className="ask-dots" style={{ display: "inline-flex", gap: 4, alignItems: "center" }}>
+                      <span style={{ background: th.accent }} /><span style={{ background: th.accent }} /><span style={{ background: th.accent }} />
+                    </span>
+                    <span style={{ fontSize: 13, color: "#64748b" }}>Reading your calendar…</span>
+                  </div>
+                </div>
+              )}
+              <div style={{ display: "flex", justifyContent: "flex-end", padding: "2px 0 4px" }}>
+                <button onClick={() => setAskThread([])} className="bf-btn" style={{ border: "none", background: "none", fontSize: 11, fontWeight: 600, color: "#94a3b8", cursor: "pointer", padding: 0 }}>Clear conversation</button>
+              </div>
+            </div>
+          )}
+          <form onSubmit={(e) => { e.preventDefault(); askAssistant(askText); }} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderTop: askThread.length > 0 || askBusy ? "1px solid #e2e8f0" : "none" }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={th.accent} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/></svg>
+            <input autoFocus value={askText} onChange={(e) => { setAskText(e.target.value); setSearchQuery(looksLikeSentence(e.target.value) ? "" : e.target.value); }} disabled={askBusy}
+              onKeyDown={(e) => { if (e.key === "Escape") { setAskOpen(false); setAskText(""); setSearchQuery(""); } }}
+              placeholder={askThread.length ? "Reply, ask something else, or search…" : "Search, ask, or tell Flowy: mortgage · where is rent this month? · move Bob to Tuesday"}
               style={{ flex: 1, minWidth: 0, border: "none", background: "transparent", fontSize: 15, color: "#1e293b", outline: "none", fontFamily: "inherit" }} />
             <button type="button" onClick={startListening} className="bf-btn" title="Speak"
               style={{ width: 30, height: 30, borderRadius: "50%", border: listening ? "1.5px solid #ef4444" : "1.5px solid #e2e8f0", background: listening ? "#fee2e2" : "#fff", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, animation: listening ? "pulse 1s infinite" : "none" }}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={listening ? "#ef4444" : "#64748b"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
             </button>
-            <button type="submit" disabled={askBusy || !askText.trim()} className="bf-btn" style={{ border: "none", borderRadius: 8, padding: "6px 12px", background: askBusy || !askText.trim() ? "#e2e8f0" : th.accent, color: askBusy || !askText.trim() ? "#94a3b8" : "#fff", fontSize: 13, fontWeight: 700 }}>{askBusy ? "Thinking" : "Ask"}</button>
-            <button type="button" onClick={() => { setAskOpen(false); setAskText(""); setSearchQuery(""); setAskReply(""); setAskActions([]); }} className="bf-btn" style={{ border: "none", background: "none", color: "#94a3b8", fontSize: 16, cursor: "pointer", padding: "0 4px", fontWeight: 700 }}>×</button>
+            <button type="submit" disabled={askBusy || !askText.trim()} className="bf-btn" style={{ border: "none", borderRadius: 8, padding: "6px 12px", background: askBusy || !askText.trim() ? "#e2e8f0" : th.accent, color: askBusy || !askText.trim() ? "#94a3b8" : "#fff", fontSize: 13, fontWeight: 700 }}>{askBusy ? "Thinking" : "Send"}</button>
+            <button type="button" onClick={() => { setAskOpen(false); setAskText(""); setSearchQuery(""); }} className="bf-btn" style={{ border: "none", background: "none", color: "#94a3b8", fontSize: 16, cursor: "pointer", padding: "0 4px", fontWeight: 700 }}>×</button>
           </form>
-          {askBusy && (
-            <div style={{ borderTop: "1px solid #f1f5f9", padding: "12px 14px", display: "flex", alignItems: "center", gap: 12 }}>
-              <span className="ask-dots" style={{ display: "inline-flex", gap: 4, alignItems: "center" }}>
-                <span style={{ background: th.accent }} /><span style={{ background: th.accent }} /><span style={{ background: th.accent }} />
-              </span>
-              <span style={{ fontSize: 13, color: "#64748b" }}>Reading your calendar and working it out…</span>
-            </div>
-          )}
-          {!askBusy && (askReply || askActions.length > 0) && (
-            <div style={{ borderTop: "1px solid #f1f5f9", padding: "10px 14px 12px" }}>
-              {askReply && <div style={{ fontSize: 14, color: "#1e293b", lineHeight: 1.5 }}>{askReply}</div>}
-              {askActions.length > 0 && (
-                <div style={{ marginTop: 10 }}>
-                  {askActions.map((a, i) => (
-                    <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", fontSize: 13, color: "#334155" }}>
-                      <span style={{ width: 6, height: 6, borderRadius: "50%", background: th.accent, flexShrink: 0 }} />
-                      {describeAction(a)}
-                    </div>
-                  ))}
-                  <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-                    <button onClick={applyAskActions} disabled={askBusy} className="bf-btn" style={{ border: "none", borderRadius: 8, padding: "8px 16px", background: th.accent, color: "#fff", fontSize: 13, fontWeight: 700 }}>{askBusy ? "Applying…" : "Apply"}</button>
-                    <button onClick={() => { setAskActions([]); setAskReply(""); }} disabled={askBusy} className="bf-btn" style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 16px", background: "#fff", color: "#64748b", fontSize: 13, fontWeight: 600 }}>Cancel</button>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
         </div>
       )}
 
       {/* Search results: where each match falls this month, or the next time it falls */}
-      {askOpen && searchQuery.trim() && !askBusy && !askReply && (() => {
+      {askOpen && searchQuery.trim() && !askBusy && (() => {
         const hits = data.flatMap((dd) => dd.transactions.filter((tx) => fuzzyMatch(searchQuery, tx.name || "")).map((tx) => ({ tx, date: dd.date })));
         if (hits.length === 0) {
           const nextStart = dkey(cM === 11 ? cY + 1 : cY, cM === 11 ? 0 : cM + 1, 1);
@@ -3065,20 +3089,32 @@ export default function BudgetForecast() {
                 <span style={{ fontSize: 14, fontWeight: 600, color: "#1e293b" }}>Backup</span>
                 <span style={{ fontSize: 12, color: "#64748b" }}>Download everything as one JSON file.</span>
               </a>
-              <label className="bf-btn" style={{ display: "flex", flexDirection: "column", gap: 2, padding: "10px 12px", borderRadius: 10, border: "1.5px solid #e2e8f0", background: "#fff", cursor: "pointer" }}>
-                <span style={{ fontSize: 14, fontWeight: 600, color: "#1e293b" }}>Restore</span>
-                <span style={{ fontSize: 12, color: "#64748b" }}>Load a backup. Replaces your current data.</span>
-                <input type="file" accept=".json" hidden onChange={async (e) => {
-                  const file = e.target.files?.[0];
-                  if (!file) return;
-                  const text = await file.text();
-                  if (!confirm("This will replace ALL current data. Continue?")) return;
-                  await callApi("/api/import", { method: "POST", body: text });
-                  await reload();
-                  e.target.value = "";
-                  setShowLabs(false);
-                }} />
+            </div>
+            <div style={{ marginTop: 14, border: "1.5px solid #fecaca", background: "#fff7f7", borderRadius: 12, padding: "12px 14px", display: "flex", flexDirection: "column", gap: 8 }}>
+              <div style={{ fontSize: 11, fontWeight: 800, color: C.redDark, textTransform: "uppercase", letterSpacing: "0.08em" }}>Danger zone</div>
+              <div style={{ fontSize: 14, fontWeight: 600, color: "#1e293b" }}>Restore from backup</div>
+              <div style={{ fontSize: 12, color: "#7f1d1d", lineHeight: 1.5 }}>Replaces every item, reset, and note in your account with the contents of the file. There is no undo. Download a Backup first.</div>
+              <label className="bf-btn" style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "8px 12px", borderRadius: 8, border: "1.5px solid #fca5a5", background: "#fff", cursor: "pointer", fontSize: 13, fontWeight: 600, color: "#991b1b", alignSelf: "flex-start" }}>
+                {restoreFile ? `Chosen: ${restoreFile.name}` : "Choose backup file…"}
+                <input type="file" accept=".json" hidden onChange={(e) => { setRestoreFile(e.target.files?.[0] || null); setRestoreConfirm(""); e.target.value = ""; }} />
               </label>
+              {restoreFile && (
+                <>
+                  <div style={{ fontSize: 12, color: "#7f1d1d" }}>Type <strong>REPLACE</strong> to confirm.</div>
+                  <input value={restoreConfirm} onChange={(e) => setRestoreConfirm(e.target.value)} placeholder="REPLACE" className="bf-input" style={{ borderColor: "#fca5a5", fontSize: 14, padding: "8px 12px", letterSpacing: "0.08em" }} />
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button disabled={restoreConfirm !== "REPLACE"} onClick={async () => {
+                      if (!restoreFile || restoreConfirm !== "REPLACE") return;
+                      const text = await restoreFile.text();
+                      await callApi("/api/import", { method: "POST", body: text });
+                      await reload();
+                      setRestoreFile(null); setRestoreConfirm(""); setShowLabs(false);
+                      setShareMsg("Restored from backup"); setTimeout(() => setShareMsg(""), 3000);
+                    }} className="bf-btn" style={{ border: "none", borderRadius: 8, padding: "9px 16px", background: restoreConfirm === "REPLACE" ? C.redDark : "#fca5a5", color: "#fff", fontSize: 13, fontWeight: 700, cursor: restoreConfirm === "REPLACE" ? "pointer" : "not-allowed" }}>Replace my data</button>
+                    <button onClick={() => { setRestoreFile(null); setRestoreConfirm(""); }} className="bf-btn" style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 14px", background: "#fff", color: "#64748b", fontSize: 13, fontWeight: 600 }}>Cancel</button>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </div>

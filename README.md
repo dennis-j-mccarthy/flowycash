@@ -58,7 +58,7 @@ npm run dev           # Next.js dev server on port 3000
 | `CLERK_SECRET_KEY` | Yes | Clerk secret key (`sk_live_...`) |
 | `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | Yes | Stripe publishable key |
 | `STRIPE_SECRET_KEY` | Yes | Stripe secret key |
-| `CRON_SECRET` | Yes | Bearer token Vercel Cron sends to the notify/push routes. Also signs the per-user calendar feed URL, so the feed is off without it |
+| `CRON_SECRET` | Recommended | Bearer token Vercel Cron sends to the notify/push routes. Also signs the per-user calendar feed URL (falls back to CLERK_SECRET_KEY when unset) |
 | `ANTHROPIC_API_KEY` | Yes | Anthropic API key. Used by `/api/reconcile/image` (statement photos) and `/api/assistant` (natural-language questions and edits) |
 
 ### Production Gotchas
