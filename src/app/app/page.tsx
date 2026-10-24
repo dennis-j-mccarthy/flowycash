@@ -1341,6 +1341,34 @@ export default function BudgetForecast() {
               style={{ width: 32, height: 32, borderRadius: "50%", border: "1.5px solid rgba(255,255,255,0.3)", background: "rgba(255,255,255,0.1)", display: "flex", alignItems: "center", justifyContent: "center" }}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={th.headerText} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="4" y1="20" x2="20" y2="20"/><rect x="6" y="11" width="3" height="7"/><rect x="11" y="6" width="3" height="12"/><rect x="16" y="9" width="3" height="9"/></svg>
             </button>
+            <div style={{ position: "relative" }}>
+              <button onClick={() => setShowThemePicker((v) => !v)} className="bf-btn" title="Theme"
+                style={{ width: 32, height: 32, borderRadius: "50%", border: showThemePicker ? `1.5px solid ${th.accent}` : "1.5px solid rgba(255,255,255,0.3)", background: showThemePicker ? "rgba(255,255,255,0.9)" : "rgba(255,255,255,0.1)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={showThemePicker ? th.headerBg : th.headerText} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a10 10 0 0 0 0 20c1.1 0 2-.9 2-2v-1a2 2 0 0 1 2-2h2a4 4 0 0 0 4-4c0-6-4.5-11-10-11z"/><circle cx="7.5" cy="10.5" r="1.2" fill="currentColor"/><circle cx="12" cy="7" r="1.2" fill="currentColor"/><circle cx="16.5" cy="10.5" r="1.2" fill="currentColor"/></svg>
+              </button>
+              {showThemePicker && (
+                <>
+                  <div onClick={() => setShowThemePicker(false)} style={{ position: "fixed", inset: 0, zIndex: 45 }} />
+                  <div style={{ position: "absolute", top: "calc(100% + 10px)", right: 0, zIndex: 46, background: "#fff", borderRadius: 16, padding: "14px 14px 12px", boxShadow: "0 16px 48px rgba(15,23,42,0.18), 0 0 0 1px rgba(15,23,42,0.06)", animation: "panelIn 0.15s ease", display: "flex", flexDirection: "column", gap: 10, minWidth: 300 }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.08em", padding: "0 2px" }}>Theme</div>
+                    <div style={{ display: "flex", gap: 10, justifyContent: "space-between" }}>
+                      {Object.entries(THEMES).map(([key, t]) => {
+                        const on = theme === key;
+                        return (
+                          <button key={key} onClick={() => { setTheme(key); localStorage.setItem("flowycash-theme", key); }} className="bf-btn" title={t.name}
+                            style={{ border: "none", background: "none", padding: 0, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 6, width: 50 }}>
+                            <span style={{ width: 40, height: 40, borderRadius: "50%", background: `linear-gradient(135deg, ${t.headerBg} 0%, ${t.headerBg} 55%, ${t.accent} 55%, ${t.accent} 100%)`, boxShadow: on ? `0 0 0 2px #fff, 0 0 0 4px ${t.accent}` : "0 1px 3px rgba(15,23,42,0.2)", transition: "transform 0.12s, box-shadow 0.12s", transform: on ? "scale(1.06)" : "scale(1)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                              {on && <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>}
+                            </span>
+                            <span style={{ fontSize: 11, fontWeight: on ? 700 : 500, color: on ? "#1e293b" : "#64748b" }}>{t.name}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           {(() => {
@@ -2979,12 +3007,6 @@ export default function BudgetForecast() {
           <span style={{ fontSize: 10, color: "#94a3b8", fontWeight: 600, minWidth: 14, textAlign: "center" }}>A</span>
           <button onClick={() => setFontSize((s) => Math.min(18, s + 1))} className="bf-btn" style={{ width: 24, height: 24, borderRadius: 6, border: "none", background: "transparent", fontSize: 13, color: "#64748b", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700 }}>+</button>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <button onClick={() => setShowThemePicker(true)} className="bf-btn" title="Theme"
-            style={{ width: 28, height: 28, borderRadius: "50%", border: "1.5px solid #d1d5db", background: "#fff", color: "#64748b", display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a10 10 0 0 0 0 20c1.1 0 2-.9 2-2v-1a2 2 0 0 1 2-2h2a4 4 0 0 0 4-4c0-6-4.5-11-10-11z"/><circle cx="7.5" cy="10.5" r="1.2" fill="currentColor"/><circle cx="12" cy="7" r="1.2" fill="currentColor"/><circle cx="16.5" cy="10.5" r="1.2" fill="currentColor"/></svg>
-          </button>
-        </div>
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
           <button onClick={() => { setTutorialStep(0); }} className="bf-btn"
             style={{ padding: "4px 10px", borderRadius: 20, border: "1.5px solid #d1d5db", background: "#fff", color: "#64748b", fontSize: 10, fontWeight: 600 }}>
@@ -3097,29 +3119,6 @@ export default function BudgetForecast() {
         </div>
       )}
 
-      {/* Theme picker */}
-      {showThemePicker && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.35)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, animation: "panelIn 0.15s ease" }}
-          onClick={() => setShowThemePicker(false)}>
-          <div style={{ background: "#fff", borderRadius: 16, padding: "20px 22px", width: 300, maxWidth: "90vw", boxShadow: "0 20px 60px rgba(0,0,0,0.15)" }} onClick={(e) => e.stopPropagation()}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-              <span style={{ fontSize: 15, fontWeight: 700, color: "#1e293b" }}>Theme</span>
-              <button onClick={() => setShowThemePicker(false)} className="bf-btn" style={{ border: "none", background: "none", fontSize: 20, color: "#94a3b8", cursor: "pointer", padding: "0 4px" }}>×</button>
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              {Object.entries(THEMES).map(([key, t]) => (
-                <button key={key} onClick={() => { setTheme(key); localStorage.setItem("flowycash-theme", key); setShowThemePicker(false); }} className="bf-btn"
-                  style={{ display: "flex", alignItems: "center", gap: 12, padding: "8px 10px", borderRadius: 10, border: theme === key ? `1.5px solid ${t.accent}` : "1.5px solid #e2e8f0", background: theme === key ? t.totalBg : "#fff", cursor: "pointer", textAlign: "left" }}>
-                  <span style={{ width: 22, height: 22, borderRadius: "50%", background: t.swatch, flexShrink: 0 }} />
-                  <span style={{ fontSize: 14, fontWeight: 600, color: "#1e293b", flex: 1 }}>{t.name}</span>
-                  {theme === key && <span style={{ fontSize: 11, fontWeight: 700, color: t.accent }}>Current</span>}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Share Modal */}
       {showShare && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, animation: "panelIn 0.18s ease" }}
@@ -3185,7 +3184,7 @@ export default function BudgetForecast() {
           { title: "Daily Balance", text: "The bar at the bottom of each day shows its running balance. Click it to set a balance reset.", icon: "💰", target: "[data-tour='calendar']", pos: "top" },
           { title: "Drag to Move", text: "Drag any transaction to a different day. For recurring items, choose 'just this one' or 'all future'.", icon: "✋", target: "[data-tour='calendar']", pos: "top" },
           { title: "Negative Day Advice", text: "The 💡 lightbulb appears on negative days. Click for strategies to stay above zero.", icon: "💡", target: "[data-tour='calendar']", pos: "top" },
-          { title: "Backup & Restore", text: "Download your data anytime. Restore from a backup. Backup and Restore live under Labs, with the debt tool, calendar feed, and the Plaid demo.", icon: "💾", target: "[data-tour='footer']", pos: "top" },
+          { title: "Backup & Restore", text: "Download your data anytime. Restore from a backup. Text size is here. Backup and Restore live under Labs, with the debt tool, calendar feed, and the Plaid demo. The palette is in the top bar.", icon: "💾", target: "[data-tour='footer']", pos: "top" },
           { title: "You're Ready!", text: "Explore your month. Click transactions to edit. Drag to reschedule. You got this.", icon: "🚀", target: "[data-tour='logo']", pos: "bottom" },
         ];
         const step = steps[tutorialStep];
