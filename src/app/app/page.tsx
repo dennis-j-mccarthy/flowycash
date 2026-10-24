@@ -1275,6 +1275,10 @@ export default function BudgetForecast() {
     .stat-pill:hover .stat-popup { display: block !important; }
     .stat-pill:hover { background: #f8fafc !important; }
     .day-num:hover .day-mag { display: inline !important; }
+    @keyframes askdot { 0%, 80%, 100% { transform: translateY(0); opacity: 0.35; } 40% { transform: translateY(-4px); opacity: 1; } }
+    .ask-dots span { display: inline-block; width: 6px; height: 6px; border-radius: 50%; animation: askdot 1.1s infinite ease-in-out; }
+    .ask-dots span:nth-child(2) { animation-delay: 0.15s; }
+    .ask-dots span:nth-child(3) { animation-delay: 0.3s; }
     .ask-fab { display: none; }
     @media (max-width: 999px) { .ask-fab { display: flex; } }
     @media (max-width: 600px) { .footer-debt { display: none; } }
@@ -1461,10 +1465,18 @@ export default function BudgetForecast() {
               style={{ width: 30, height: 30, borderRadius: "50%", border: listening ? "1.5px solid #ef4444" : "1.5px solid #e2e8f0", background: listening ? "#fee2e2" : "#fff", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, animation: listening ? "pulse 1s infinite" : "none" }}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={listening ? "#ef4444" : "#64748b"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
             </button>
-            <button type="submit" disabled={askBusy || !askText.trim()} className="bf-btn" style={{ border: "none", borderRadius: 8, padding: "6px 12px", background: askBusy || !askText.trim() ? "#e2e8f0" : th.accent, color: askBusy || !askText.trim() ? "#94a3b8" : "#fff", fontSize: 13, fontWeight: 700 }}>{askBusy ? "…" : "Ask"}</button>
+            <button type="submit" disabled={askBusy || !askText.trim()} className="bf-btn" style={{ border: "none", borderRadius: 8, padding: "6px 12px", background: askBusy || !askText.trim() ? "#e2e8f0" : th.accent, color: askBusy || !askText.trim() ? "#94a3b8" : "#fff", fontSize: 13, fontWeight: 700 }}>{askBusy ? "Thinking" : "Ask"}</button>
             <button type="button" onClick={() => { setAskOpen(false); setAskText(""); setSearchQuery(""); setAskReply(""); setAskActions([]); }} className="bf-btn" style={{ border: "none", background: "none", color: "#94a3b8", fontSize: 16, cursor: "pointer", padding: "0 4px", fontWeight: 700 }}>×</button>
           </form>
-          {(askReply || askActions.length > 0) && (
+          {askBusy && (
+            <div style={{ borderTop: "1px solid #f1f5f9", padding: "12px 14px", display: "flex", alignItems: "center", gap: 12 }}>
+              <span className="ask-dots" style={{ display: "inline-flex", gap: 4, alignItems: "center" }}>
+                <span style={{ background: th.accent }} /><span style={{ background: th.accent }} /><span style={{ background: th.accent }} />
+              </span>
+              <span style={{ fontSize: 13, color: "#64748b" }}>Reading your calendar and working it out…</span>
+            </div>
+          )}
+          {!askBusy && (askReply || askActions.length > 0) && (
             <div style={{ borderTop: "1px solid #f1f5f9", padding: "10px 14px 12px" }}>
               {askReply && <div style={{ fontSize: 14, color: "#1e293b", lineHeight: 1.5 }}>{askReply}</div>}
               {askActions.length > 0 && (
