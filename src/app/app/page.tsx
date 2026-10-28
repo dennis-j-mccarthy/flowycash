@@ -5,6 +5,8 @@ import { UserButton, useAuth } from "@clerk/nextjs";
 import { ensurePushSubscription } from "@/lib/push-client";
 import type { Transaction, OverrideData, AppState } from "@/lib/types";
 import { reconcile, type BankData } from "@/lib/reconcile";
+import type { AssistantAction } from "@/app/api/assistant/route";
+import PlaidDemo from "./PlaidDemo";
 import { distributeDebt, simulateDistribution, type DebtPlacement } from "@/lib/debt-distribution";
 
 const DAYS = ["S", "M", "T", "W", "T", "F", "S"];
@@ -66,6 +68,31 @@ const TAG_SVG: Record<string, string> = {
   shopping: "M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z M3 6h18 M16 10a4 4 0 0 1-8 0", // bag
   "rent-income": "M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.78 7.78 5.5 5.5 0 0 1 7.78-7.78z M12 8l4-4", // key
 };
+const TAG_GUESSES: [RegExp, string][] = [
+  [/rent|mortgage|hoa|lease|landlord/i, "housing"],
+  [/netflix|spotify|hulu|disney|hbo|max\b|prime|youtube|apple|icloud|subscri|patreon|audible|kindle|chatgpt|claude|openai|adobe|dropbox|google one|paramount|peacock/i, "subscriptions"],
+  [/electric|power|water|sewer|trash|internet|wifi|comcast|xfinity|spectrum|verizon|at&t|t-mobile|tmobile|phone|cell|fpl|duke|utility|utilities/i, "utilities"],
+  [/insurance|geico|progressive|allstate|state farm|usaa|premium/i, "insurance"],
+  [/\bgas\b|fuel|shell|exxon|chevron|bp\b|sunoco|wawa|racetrac|7-eleven/i, "gas"],
+  [/\bcar\b|auto|toyota|honda|ford|tesla|oil change|tire|mechanic|dmv|registration/i, "auto"],
+  [/\bvet\b|dog|cat\b|pet|chewy|groom|kennel|walker/i, "pets"],
+  [/doctor|dentist|dental|pharmacy|cvs|walgreens|copay|co-pay|gym|clinic|therapy|medical|health|rx\b|vision|optom/i, "health"],
+  [/grocer|publix|costco|walmart|aldi|trader|kroger|wegmans|whole foods|safeway|heb\b|sprouts|sam's|bj's|food lion/i, "groceries"],
+  [/restaurant|dining|coffee|starbucks|dunkin|doordash|uber ?eats|grubhub|chipotle|mcdonald|chick|pizza|sushi|lunch|dinner|takeout|cafe|bar\b|brew/i, "food"],
+  [/wine|liquor|beer|spirits|total wine|abc\b|vodka|whiskey|bourbon/i, "liquor"],
+  [/toll|sunpass|e-?zpass|turnpike|parking/i, "tolls"],
+  [/loan|credit card|visa|amex|mastercard|discover|capital one|chase|citi|affirm|klarna|afterpay|repay|debt|minimum payment/i, "debt"],
+  [/salary|paycheck|payroll|direct deposit|wages|bi-?weekly|stipend|bonus|commission|refund|reimburse/i, "income"],
+  [/amazon|target|ebay|etsy|best buy|home depot|lowe|ikea|wayfair|shop|store|mall|clothes|shoes|nike/i, "shopping"],
+  [/saving|401k|ira\b|roth|brokerage|vanguard|fidelity|schwab|invest|emergency fund/i, "savings"],
+  [/allowance|kids|child|daycare|tuition|school|camp\b/i, "allowance"],
+  [/haircut|salon|barber|nails|spa\b|massage|gift|birthday|church|tithe|donation|charity/i, "personal"],
+];
+// Best-guess tag for an untagged item, from its name. Null when nothing matches.
+function guessTag(name: string): string | null {
+  for (const [re, tag] of TAG_GUESSES) if (re.test(name)) return tag;
+  return null;
+}
 function TagIconSvg({ tag, size = 10 }: { tag: string; size?: number }) {
   const d = TAG_SVG[tag.toLowerCase()];
   if (!d) return null;
@@ -257,8 +284,12 @@ export default function BudgetForecast() {
   const [showTagPills, setShowTagPills] = useState(false);
   const [filterTag, setFilterTag] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [showSearch, setShowSearch] = useState(false);
-  const [showChart, setShowChart] = useState(false);
+  const [filterType, setFilterType] = useState<"all" | "expense" | "income">("all");
+  const [askOpen, setAskOpen] = useState(false);
+  const [askText, setAskText] = useState("");
+  const [askBusy, setAskBusy] = useState(false);
+  const [askThread, setAskThread] = useState<{ role: "user" | "assistant"; text: string; actions?: AssistantAction[]; applied?: boolean; error?: boolean }[]>([]);
+  const askThreadRef = useRef<HTMLDivElement | null>(null);
   const [hidePastDays, setHidePastDays] = useState(true);
   const [theme, setTheme] = useState(() => typeof window !== "undefined" ? localStorage.getItem("flowycash-theme") || "forest" : "forest");
   const [tagInput, setTagInput] = useState("");
@@ -334,22 +365,17 @@ export default function BudgetForecast() {
   const [zoomWeek, setZoomWeek] = useState<number | null>(null);
   const [zoomDay, setZoomDay] = useState<string | null>(null);
   const [showDashboard, setShowDashboard] = useState(false);
-  const [show3MChart, setShow3MChart] = useState(false);
   const [chartMonths, setChartMonths] = useState(1);
+  const [showThemePicker, setShowThemePicker] = useState(false);
+  const [showPlaidDemo, setShowPlaidDemo] = useState(false);
+  const [showLabs, setShowLabs] = useState(false);
+  const [restoreFile, setRestoreFile] = useState<File | null>(null);
+  const [restoreConfirm, setRestoreConfirm] = useState("");
+  const [calFeed, setCalFeed] = useState<{ open: boolean; url: string; webcal: string; error: string; copied: boolean }>({ open: false, url: "", webcal: "", error: "", copied: false });
   const [showMonthNote, setShowMonthNote] = useState(false);
   const [tutorialStep, setTutorialStep] = useState(-1);
   const [shareMsg, setShareMsg] = useState("");
   const [showShare, setShowShare] = useState(false);
-  const [showWeeklyPlanner, setShowWeeklyPlanner] = useState(false);
-  const [plannerStep, setPlannerStep] = useState(0);
-  const [plannerData, setPlannerData] = useState({
-    outcomes: "",
-    parsedOutcomes: [] as string[],
-    highFocus: "",
-    lowFocus: "",
-    energyMap: { high: "", medium: "", recovery: "" },
-    buckets: { mon: [] as string[], tue: [] as string[], wed: [] as string[], thu: [] as string[], fri: [] as string[], sat: [] as string[] },
-  });
   const [shareEmail, setShareEmail] = useState("");
   const [sharedWith, setSharedWith] = useState<{ email: string }[]>([]);
   const [snapPreview, setSnapPreview] = useState<{ balance: number; date: string; moved: { name: string; from: string; to: string; amount: number; txId?: string; occurrenceDate?: string }[]; unaccounted: { name: string; amount: number; type: string; date: string }[]; imageUrl?: string } | null>(null);
@@ -649,8 +675,10 @@ export default function BudgetForecast() {
       const t = Array.from(e.results).map((r: any) => r[0].transcript).join("");
       setVoiceText(t);
       if (e.results[0].isFinal) {
-        processVoice(t.toLowerCase().trim());
         setListening(false);
+        setAskOpen(true);
+        setAskText(t.trim());
+        askAssistant(t.trim());
       }
     };
     rec.onerror = () => { setListening(false); setVoiceResult("Didn't catch that — try again"); setTimeout(() => setVoiceResult(""), 3000); };
@@ -658,63 +686,133 @@ export default function BudgetForecast() {
     rec.start();
   }
 
-  function processVoice(cmd: string) {
-    // Navigation
-    if (cmd.includes("next month")) { nextM(); setVoiceResult(`Moved to next month`); }
-    else if (cmd.includes("previous month") || cmd.includes("last month")) { prevM(); setVoiceResult(`Moved to previous month`); }
-    // Views
-    else if (cmd.includes("show dashboard") || cmd.includes("open dashboard")) { setShowDashboard(true); setVoiceResult("Opening dashboard"); }
-    else if (cmd.includes("close dashboard") || cmd.includes("hide dashboard")) { setShowDashboard(false); setVoiceResult("Closed dashboard"); }
-    else if (cmd.includes("show chart") || cmd.includes("open chart")) { setShowChart(true); setVoiceResult("Showing chart"); }
-    else if (cmd.includes("hide chart") || cmd.includes("close chart")) { setShowChart(false); setVoiceResult("Chart hidden"); }
-    else if (cmd.includes("show tags")) { setShowTagPills(true); setVoiceResult("Tags visible"); }
-    else if (cmd.includes("hide tags")) { setShowTagPills(false); setVoiceResult("Tags hidden"); }
-    // Balance query
-    else if (cmd.match(/balance.*(on|for).*(the\s+)?(\d+)/)) {
-      const dayNum = parseInt(cmd.match(/(\d+)/)?.[1] || "0");
-      const key = dkey(cY, cM, dayNum);
-      const dd = dayMap[key];
-      if (dd) { setVoiceResult(`Balance on the ${dayNum}th: ${fmt(dd.balance)}`); setZoomDay(key); }
-      else setVoiceResult(`No data for the ${dayNum}th`);
+  useEffect(() => {
+    const el = askThreadRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [askThread, askBusy]);
+
+  async function askAssistant(text: string) {
+    const q = text.trim();
+    if (!q || askBusy) return;
+    const history = askThread.filter((m) => !m.error).slice(-6).map((m) => ({ role: m.role, text: m.text }));
+    setAskThread((t) => [...t, { role: "user", text: q }]);
+    setAskText("");
+    setSearchQuery("");
+    setAskBusy(true);
+    try {
+      const res = await fetch("/api/assistant", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: q, state, year: cY, month: cM, today: todayKey, demo, history }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
+      const reply: string = data.reply || "";
+      const actions: AssistantAction[] = Array.isArray(data.actions) ? data.actions : [];
+      const nav = actions.filter((a) => a.kind === "go_to_month" || a.kind === "show_day" || a.kind === "search");
+      const edits = actions.filter((a) => !nav.includes(a));
+      // Navigation and search need no confirmation.
+      for (const a of nav) runNavAction(a);
+      setAskThread((t) => [...t, { role: "assistant", text: reply, actions: edits.length ? edits : undefined }]);
+    } catch (e) {
+      setAskThread((t) => [...t, { role: "assistant", text: `Couldn't reach the assistant: ${e instanceof Error ? e.message : String(e)}`, error: true }]);
+    } finally {
+      setAskBusy(false);
     }
-    // Add transaction: "add expense/income [name] [amount] on the [day]"
-    else if (cmd.match(/add\s+(expense|income)/)) {
-      const type = cmd.includes("income") ? "income" : "expense";
-      const amtMatch = cmd.match(/(\d+)\s*(dollar|buck|bucks|\$)?/);
-      const dayMatch = cmd.match(/(?:on|for)\s+(?:the\s+)?(\d+)/);
-      const amt = amtMatch ? parseInt(amtMatch[1]) : 0;
-      const day = dayMatch ? parseInt(dayMatch[1]) : new Date().getDate();
-      // Extract name: text between type and amount/on
-      let name = cmd.replace(/add\s+(expense|income)\s*/, "").replace(/\d+\s*(dollar|buck|bucks|\$)?s?/, "").replace(/on\s+(?:the\s+)?\d+.*/, "").trim();
-      if (!name) name = type === "income" ? "Income" : "Expense";
-      if (amt > 0) {
-        const date = dkey(cY, cM, Math.min(day, dim(cY, cM)));
-        setForm({ name: name.charAt(0).toUpperCase() + name.slice(1), amount: String(amt), type, recurrence: "none", date, autopay: false, reminder: false, tags: "", highlight: "", note: "" });
-        setEditTx(null);
-        setEditDate(null);
-        openPanel("tx");
-        setVoiceResult(`Adding ${type}: ${name} $${amt} on the ${day}th — confirm in modal`);
-      } else {
-        setVoiceResult(`Say: "add expense Netflix 16 dollars on the 8th"`);
-      }
-    }
-    // Zoom day
-    else if (cmd.match(/(?:show|open|zoom)\s+(?:day\s+)?(?:the\s+)?(\d+)/)) {
-      const dayNum = parseInt(cmd.match(/(\d+)/)?.[1] || "0");
-      const key = dkey(cY, cM, Math.min(dayNum, dim(cY, cM)));
-      setZoomDay(key);
-      setVoiceResult(`Showing day ${dayNum}`);
-    }
-    // Help
-    else if (cmd.includes("help") || cmd.includes("what can")) {
-      setVoiceResult("Try: next month, show dashboard, add expense, balance on the 15th, show day 9");
-    }
-    else {
-      setVoiceResult(`"${cmd}" — not recognized. Say "help" for commands.`);
-    }
-    setTimeout(() => setVoiceResult(""), 4000);
   }
 
+  function runNavAction(a: AssistantAction) {
+    if (a.kind === "go_to_month" && a.date) {
+      const { year, month } = pdk(a.date);
+      setCY(year); setCM(month); setZoomWeek(null); setZoomDay(null);
+    } else if (a.kind === "show_day" && a.date) {
+      const { year, month } = pdk(a.date);
+      setCY(year); setCM(month); setZoomWeek(null); setZoomDay(a.date);
+    } else if (a.kind === "search" && a.query) {
+      setAskOpen(true); setAskText(a.query); setSearchQuery(a.query);
+    }
+  }
+
+  function describeAction(a: AssistantAction): string {
+    const tx = state.transactions.find((t) => t.id === a.transactionId);
+    const nm = a.name || tx?.name || "payment";
+    const scope = a.scope === "future" ? " (this and all future)" : "";
+    if (a.kind === "move") return `Move ${nm} from ${a.occurrenceDate ? friendlyDate(a.occurrenceDate) : "?"} to ${a.newDate ? friendlyDate(a.newDate) : "?"}${scope}`;
+    if (a.kind === "set_amount") return `Change ${nm} on ${a.occurrenceDate ? friendlyDate(a.occurrenceDate) : "?"} to ${fmt(a.amount || 0)}${scope}`;
+    if (a.kind === "skip") return `Skip ${nm} on ${a.occurrenceDate ? friendlyDate(a.occurrenceDate) : "?"}${scope}`;
+    if (a.kind === "add") return `Add ${a.type === "income" ? "income" : "expense"} ${nm} ${fmt(a.amount || 0)} on ${a.date ? friendlyDate(a.date) : "?"}${a.recurrence && a.recurrence !== "none" ? `, ${a.recurrence}` : ""}`;
+    return a.kind;
+  }
+
+  async function applyAskActions(msgIndex: number) {
+    const acts = askThread[msgIndex]?.actions || [];
+    if (!acts.length || askThread[msgIndex]?.applied) return;
+    setAskBusy(true);
+    const touched = new Set<string>();
+    const dayBefore = (s: string) => { const { year, month, day } = pdk(s); const d = new Date(year, month, day); d.setDate(d.getDate() - 1); return dkey(d.getFullYear(), d.getMonth(), d.getDate()); };
+    try {
+      for (const a of acts) {
+        const tx = state.transactions.find((t) => t.id === a.transactionId);
+        if (a.kind === "add") {
+          if (!a.name || !a.amount || !a.date) continue;
+          await callApi("/api/transactions", { method: "POST", body: JSON.stringify({ name: a.name, amount: a.amount, type: a.type || "expense", recurrence: a.recurrence || "none", startDate: a.date, autopay: false, reminder: false, tags: "", highlight: "", note: "" }) });
+          touched.add(a.date);
+          continue;
+        }
+        if (!tx || !a.occurrenceDate) continue;
+        const occ = a.occurrenceDate;
+        const future = a.scope === "future" && tx.recurrence !== "none";
+        if (a.kind === "move" && a.newDate) {
+          if (tx.recurrence === "none") {
+            await callApi(`/api/transactions/${tx.id}`, { method: "PUT", body: JSON.stringify({ startDate: a.newDate }) });
+          } else if (!future) {
+            await callApi("/api/overrides", { method: "POST", body: JSON.stringify({ transactionId: tx.id, occurrenceDate: occ, movedTo: a.newDate }) });
+          } else if (occ <= tx.startDate) {
+            await callApi(`/api/transactions/${tx.id}`, { method: "PUT", body: JSON.stringify({ startDate: a.newDate }) });
+          } else {
+            await callApi(`/api/transactions/${tx.id}`, { method: "PUT", body: JSON.stringify({ endDate: dayBefore(occ) }) });
+            await callApi("/api/transactions", { method: "POST", body: JSON.stringify({ name: tx.name, amount: tx.amount, type: tx.type, recurrence: tx.recurrence, startDate: a.newDate, autopay: tx.autopay ?? false, reminder: tx.reminder ?? false, tags: tx.tags ?? "", highlight: tx.highlight ?? "", note: tx.note ?? "" }) });
+          }
+          touched.add(occ); touched.add(a.newDate);
+        } else if (a.kind === "set_amount" && a.amount != null) {
+          if (tx.recurrence === "none" || future) {
+            if (future && occ > tx.startDate) {
+              await callApi(`/api/transactions/${tx.id}`, { method: "PUT", body: JSON.stringify({ endDate: dayBefore(occ) }) });
+              await callApi("/api/transactions", { method: "POST", body: JSON.stringify({ name: tx.name, amount: a.amount, type: tx.type, recurrence: tx.recurrence, startDate: occ, autopay: tx.autopay ?? false, reminder: tx.reminder ?? false, tags: tx.tags ?? "", highlight: tx.highlight ?? "", note: tx.note ?? "" }) });
+            } else {
+              await callApi(`/api/transactions/${tx.id}`, { method: "PUT", body: JSON.stringify({ amount: a.amount }) });
+            }
+          } else {
+            await callApi("/api/overrides", { method: "POST", body: JSON.stringify({ transactionId: tx.id, occurrenceDate: occ, amount: a.amount }) });
+          }
+          touched.add(occ);
+        } else if (a.kind === "skip") {
+          if (tx.recurrence === "none" || (future && occ <= tx.startDate)) {
+            await callApi(`/api/transactions/${tx.id}`, { method: "DELETE" });
+          } else if (future) {
+            await callApi(`/api/transactions/${tx.id}`, { method: "PUT", body: JSON.stringify({ endDate: dayBefore(occ) }) });
+          } else {
+            await callApi("/api/overrides", { method: "POST", body: JSON.stringify({ transactionId: tx.id, occurrenceDate: occ, deleted: true }) });
+          }
+          touched.add(occ);
+        }
+      }
+      await reload();
+      setExpandedDays((prev) => { const next = new Set(prev); touched.forEach((d) => next.add(d)); return next; });
+      const first = Array.from(touched).sort()[0];
+      if (first) { const { year, month } = pdk(first); if (year !== cY || month !== cM) { setCY(year); setCM(month); } }
+      setAskThread((t) => t.map((m, i) => (i === msgIndex ? { ...m, applied: true } : m)).concat([{ role: "assistant", text: "Done. The calendar is updated." }]));
+    } catch (e) {
+      setAskThread((t) => [...t, { role: "assistant", text: `Couldn't apply that: ${e instanceof Error ? e.message : String(e)}`, error: true }]);
+    } finally {
+      setAskBusy(false);
+    }
+  }
+
+  // A short phrase is a search; anything longer or with punctuation is for the assistant.
+  function looksLikeSentence(q: string): boolean {
+    return q.trim().split(/\s+/).length > 3 || /[?!.,]/.test(q);
+  }
   function fuzzyMatch(q: string, target: string): boolean {
     if (!q) return true;
     const ql = q.toLowerCase().trim();
@@ -725,6 +823,7 @@ export default function BudgetForecast() {
     for (let j = 0; j < tl.length && i < ql.length; j++) if (tl[j] === ql[i]) i++;
     return i === ql.length;
   }
+  const visibleTx = <T extends { type: string }>(txs: T[]) => filterType === "all" ? txs : txs.filter((t) => t.type === filterType);
   const txMatchesFilter = (tx: any) => {
     if (filterTag && !((tx.tags || "").split(",").map((s: string) => s.trim()).includes(filterTag))) return false;
     if (searchQuery.trim() && !fuzzyMatch(searchQuery, tx.name || "")) return false;
@@ -1066,6 +1165,95 @@ export default function BudgetForecast() {
   const totalIn = data.reduce((s, d) => s + d.transactions.filter((t) => t.type === "income").reduce((a, t) => a + Math.abs(t.amount), 0), 0);
   const totalOut = data.reduce((s, d) => s + d.transactions.filter((t) => t.type === "expense").reduce((a, t) => a + Math.abs(t.amount), 0), 0);
 
+  const buildForecast = (months: number) => {
+        // Compute 90 days of daily balances starting from today
+        const today = new Date();
+        const allTxs = (state.transactions || []);
+        const mResets = state.balanceResets || {};
+
+        // First compute today's starting balance by walking from earliest tx
+        let startBal = state.startingBalance;
+        const allStarts = allTxs.map((t) => t.startDate).filter(Boolean).sort();
+        const earliest = allStarts[0];
+        const todayKey2 = dkey(today.getFullYear(), today.getMonth(), today.getDate());
+        if (earliest && earliest < todayKey2) {
+          const sD = new Date(parseInt(earliest.slice(0,4)), parseInt(earliest.slice(5,7))-1, parseInt(earliest.slice(8,10)));
+          for (let cur = new Date(sD); cur < today; cur.setDate(cur.getDate() + 1)) {
+            const dk = dkey(cur.getFullYear(), cur.getMonth(), cur.getDate());
+            if (mResets[dk] !== undefined) startBal = mResets[dk];
+            const mStart = dkey(cur.getFullYear(), cur.getMonth(), 1);
+            const mEnd = dkey(cur.getFullYear(), cur.getMonth(), dim(cur.getFullYear(), cur.getMonth()));
+            allTxs.forEach((tx) => {
+              const occs = getOccurrences(tx.startDate, tx.recurrence, mStart, mEnd, tx.endDate);
+              occs.forEach((odk) => {
+                if (odk !== dk) return;
+                const ok = `${tx.id}::${odk}`;
+                const ov = state.overrides[ok] as OverrideData | undefined;
+                if (ov?.deleted) return;
+                const disp = ov?.movedTo || odk;
+                if (disp !== dk) return;
+                const ovClean = ov ? Object.fromEntries(Object.entries(ov).filter(([, v]) => v != null)) : {};
+                const eff = ov ? { ...tx, ...ovClean } : tx;
+                startBal += ((eff.type || tx.type) === "income" ? 1 : -1) * Math.abs(eff.amount ?? tx.amount);
+              });
+            });
+          }
+        }
+
+        // Now generate 90 days from today
+        const daysN: { date: string; bal: number; month: number; day: number; monthName: string }[] = [];
+        let bal90 = startBal;
+        const totalChartDays = months * 30;
+        for (let i = 0; i < totalChartDays; i++) {
+          const d = new Date(today);
+          d.setDate(d.getDate() + i);
+          const dk = dkey(d.getFullYear(), d.getMonth(), d.getDate());
+          if (mResets[dk] !== undefined) bal90 = mResets[dk];
+          const mStart = dkey(d.getFullYear(), d.getMonth(), 1);
+          const mEnd = dkey(d.getFullYear(), d.getMonth(), dim(d.getFullYear(), d.getMonth()));
+          allTxs.forEach((tx) => {
+            const occs = getOccurrences(tx.startDate, tx.recurrence, mStart, mEnd, tx.endDate);
+            occs.forEach((odk) => {
+              if (odk !== dk) return;
+              const ok = `${tx.id}::${odk}`;
+              const ov = state.overrides[ok] as OverrideData | undefined;
+              if (ov?.deleted) return;
+              const disp = ov?.movedTo || odk;
+              if (disp !== dk) return;
+              const ovClean = ov ? Object.fromEntries(Object.entries(ov).filter(([, v]) => v != null)) : {};
+              const eff = ov ? { ...tx, ...ovClean } : tx;
+              bal90 += ((eff.type || tx.type) === "income" ? 1 : -1) * Math.abs(eff.amount ?? tx.amount);
+            });
+          });
+          daysN.push({ date: dk, bal: Math.round(bal90 * 100) / 100, month: d.getMonth(), day: d.getDate(), monthName: MONTHS[d.getMonth()] });
+        }
+
+        const allBals = daysN.map((d) => d.bal);
+        const maxB = Math.max(...allBals, 0);
+        const minB = Math.min(...allBals, 0);
+        const range = maxB - minB || 1;
+        const negDaysN = daysN.filter((d) => d.bal < 0);
+        const lowDayN = daysN.reduce((min, d) => d.bal < min.bal ? d : min, daysN[0]);
+        const cw = 900, ch = 220, padL = 55, padT = 10, padB = 30;
+        const chartW = cw - padL, chartH = ch - padT - padB;
+        const zeroY = padT + ((maxB - 0) / range) * chartH;
+
+        // Month boundaries
+        const monthBounds: { month: string; startIdx: number }[] = [];
+        let prevMonth = -1;
+        daysN.forEach((d, i) => { if (d.month !== prevMonth) { monthBounds.push({ month: d.monthName, startIdx: i }); prevMonth = d.month; } });
+
+        // Points for chart
+        const pts90 = daysN.map((d, i) => ({
+          x: padL + (i / (daysN.length - 1)) * chartW,
+          y: padT + ((maxB - d.bal) / range) * chartH,
+          ...d,
+        }));
+        const line90 = pts90.map((p) => `${p.x},${p.y}`).join(" ");
+        const area90 = [...pts90.map((p) => `${p.x},${p.y}`), `${pts90[pts90.length-1].x},${zeroY}`, `${pts90[0].x},${zeroY}`].join(" ");
+    return { daysN, totalChartDays, maxB, minB, negDaysN, lowDayN, cw, ch, padL, padT, padB, chartW, zeroY, monthBounds, pts90, line90, area90 };
+  };
+
   const css = `
     @import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&display=swap');
     * { box-sizing: border-box; margin: 0; }
@@ -1083,7 +1271,7 @@ export default function BudgetForecast() {
     .cal-cell { transition: background 0.1s; }
     .cal-cell:hover { background: #f8fafc !important; }
     .cal-cell:hover .cell-plus { opacity: 1 !important; }
-    .cell-addbtn:hover { transform: scale(1.4); background: currentColor; color: #fff !important; }
+    .cell-addbtn:hover { transform: scale(1.4); background: #e2e8f0; }
     .tx-chip { transition: all 0.1s; cursor: grab; }
     .tx-chip:hover { background: #eef2ff !important; outline: 1.5px solid #818cf8; outline-offset: -1px; border-radius: 5px; }
     .list-row { transition: all 0.1s; }
@@ -1093,6 +1281,12 @@ export default function BudgetForecast() {
     .stat-pill:hover .stat-popup { display: block !important; }
     .stat-pill:hover { background: #f8fafc !important; }
     .day-num:hover .day-mag { display: inline !important; }
+    @keyframes askdot { 0%, 80%, 100% { transform: translateY(0); opacity: 0.35; } 40% { transform: translateY(-4px); opacity: 1; } }
+    .ask-dots span { display: inline-block; width: 6px; height: 6px; border-radius: 50%; animation: askdot 1.1s infinite ease-in-out; }
+    .ask-dots span:nth-child(2) { animation-delay: 0.15s; }
+    .ask-dots span:nth-child(3) { animation-delay: 0.3s; }
+    .ask-fab { display: none; }
+    @media (max-width: 999px) { .ask-fab { display: flex; } }
   `;
 
   const th = THEMES[theme] || THEMES.forest;
@@ -1102,6 +1296,25 @@ export default function BudgetForecast() {
     red: "#ef4444", redDark: "#dc2626", redBg: "rgba(239,68,68,0.06)", redBorder: "rgba(239,68,68,0.2)",
     blue: "#3b82f6", blueDark: "#2563eb", blueBg: "rgba(59,130,246,0.06)", blueBorder: "rgba(59,130,246,0.2)",
   };
+
+  // Signed out and not in demo: say so instead of showing an empty $0 calendar
+  // that looks like a wiped account.
+  if (isLoaded && !isSignedIn && !demo)
+    return (
+      <div style={{ fontFamily: 'var(--font-inter), Inter, sans-serif', minHeight: "100vh", background: "#f8fafc", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+        <style>{css}</style>
+        <div style={{ background: "#fff", borderRadius: 20, padding: "36px 32px", width: 420, maxWidth: "100%", boxShadow: "0 20px 60px rgba(0,0,0,0.08)", border: "1px solid #e2e8f0", textAlign: "center" }}>
+          <img src="/logo.png" alt="Flowy Cash" style={{ width: 120, marginBottom: 18 }} />
+          <div style={{ fontSize: 22, fontWeight: 800, color: "#1e293b", letterSpacing: "-0.02em", marginBottom: 8 }}>Sign in to see your calendar</div>
+          <div style={{ fontSize: 14, color: "#64748b", lineHeight: 1.5, marginBottom: 24 }}>Your payments, balances, and forecast are saved to your account. Nothing shows here until you sign in.</div>
+          <a href="/sign-in" style={{ display: "block", background: th.headerBg, color: "#fff", borderRadius: 12, padding: "14px 18px", fontSize: 15, fontWeight: 700, textDecoration: "none", marginBottom: 10 }}>Sign in</a>
+          <button onClick={() => { localStorage.setItem("flowycash-demo", "true"); if (!demoState) setDemoState(buildDemoData()); setDemo(true); }} className="bf-btn"
+            style={{ width: "100%", background: "#fff", color: "#64748b", border: "1.5px solid #e2e8f0", borderRadius: 12, padding: "12px 18px", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
+            Try the demo instead
+          </button>
+        </div>
+      </div>
+    );
 
   return (
     <div style={{ fontFamily: 'var(--font-inter), Inter, sans-serif', width: "100%", margin: 0, padding: "24px 32px", color: "#1e293b", height: "100vh", boxSizing: "border-box", display: "flex", flexDirection: "column", overflow: "hidden" }}>
@@ -1119,34 +1332,46 @@ export default function BudgetForecast() {
           </span>
           <button onClick={nextM} className="bf-btn bf-monthnav" style={{ width: 40, height: 40, borderRadius: "50%", border: "none", background: "rgba(255,255,255,0.15)", fontSize: 22, color: th.headerText, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>›</button>
           <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
-            <button onClick={() => { setShowSearch((v) => { if (v) setSearchQuery(""); return !v; }); }} className="bf-btn" title="Search this month"
-              style={{ width: 32, height: 32, borderRadius: "50%", border: showSearch || searchQuery ? `1.5px solid ${th.accent}` : "1.5px solid rgba(255,255,255,0.3)", background: showSearch || searchQuery ? "rgba(255,255,255,0.9)" : "rgba(255,255,255,0.1)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={showSearch || searchQuery ? th.headerBg : th.headerText} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-            </button>
             <button data-tour="tags" onClick={() => setShowTagPills((v) => !v)} className="bf-btn" title="Tags"
               style={{ width: 32, height: 32, borderRadius: "50%", border: showTagPills ? `1.5px solid ${th.accent}` : "1.5px solid rgba(255,255,255,0.3)", background: showTagPills ? "rgba(255,255,255,0.9)" : "rgba(255,255,255,0.1)", display: "flex", alignItems: "center", justifyContent: "center" }}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={showTagPills ? th.headerBg : th.headerText} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
             </button>
-            <button onClick={() => { setShowWeeklyPlanner(true); setPlannerStep(0); setPlannerData({ outcomes: "", parsedOutcomes: [], highFocus: "", lowFocus: "", energyMap: { high: "", medium: "", recovery: "" }, buckets: { mon: [], tue: [], wed: [], thu: [], fri: [], sat: [] } }); }} className="bf-btn" title="Weekly Planner"
+            <button onClick={() => setAskOpen((v) => !v)} className="bf-btn" title="Search, ask, or tell Flowy"
+              style={{ width: 32, height: 32, borderRadius: "50%", border: askOpen ? `1.5px solid ${th.accent}` : "1.5px solid rgba(255,255,255,0.3)", background: askOpen ? "rgba(255,255,255,0.9)" : "rgba(255,255,255,0.1)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={askOpen ? th.headerBg : th.headerText} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M19 17l.7 2 2 .7-2 .7-.7 2-.7-2-2-.7 2-.7z"/></svg>
+            </button>
+            <button data-tour="dashboard" onClick={() => setShowDashboard(true)} className="bf-btn" title="Reports"
               style={{ width: 32, height: 32, borderRadius: "50%", border: "1.5px solid rgba(255,255,255,0.3)", background: "rgba(255,255,255,0.1)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={th.headerText} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2z"/></svg>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={th.headerText} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="4" y1="20" x2="20" y2="20"/><rect x="6" y="11" width="3" height="7"/><rect x="11" y="6" width="3" height="12"/><rect x="16" y="9" width="3" height="9"/></svg>
             </button>
-            <button data-tour="chart" onClick={() => setShow3MChart(true)} className="bf-btn" title="Cashflow Chart"
-              style={{ width: 32, height: 32, borderRadius: "50%", border: "1.5px solid rgba(255,255,255,0.3)", background: "rgba(255,255,255,0.1)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={th.headerText} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-            </button>
-            <button onClick={startListening} className="bf-btn" title="Voice command"
-              style={{ width: 32, height: 32, borderRadius: "50%", border: listening ? `1.5px solid #ef4444` : "1.5px solid rgba(255,255,255,0.3)", background: listening ? "#fee2e2" : "rgba(255,255,255,0.1)", display: "flex", alignItems: "center", justifyContent: "center", animation: listening ? "pulse 1s infinite" : "none" }}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={listening ? "#ef4444" : th.headerText} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
-            </button>
-            <button data-tour="dashboard" onClick={() => setShowDashboard(true)} className="bf-btn" title="Dashboard"
-              style={{ width: 32, height: 32, borderRadius: "50%", border: "1.5px solid rgba(255,255,255,0.3)", background: "rgba(255,255,255,0.1)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={th.headerText} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
-            </button>
-            <button onClick={() => { setDebtAmount(""); setDebtChunks([]); setDebtName("Debt Repayment"); setDebtStep(0); openPanel("debt-distribution"); }} className="bf-btn" title="Distribute a debt"
-              style={{ width: 32, height: 32, borderRadius: "50%", border: "1.5px solid rgba(255,255,255,0.3)", background: "rgba(255,255,255,0.1)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={th.headerText} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={TAG_SVG.debt} /></svg>
-            </button>
+            <div style={{ position: "relative" }}>
+              <button onClick={() => setShowThemePicker((v) => !v)} className="bf-btn" title="Theme"
+                style={{ width: 32, height: 32, borderRadius: "50%", border: showThemePicker ? `1.5px solid ${th.accent}` : "1.5px solid rgba(255,255,255,0.3)", background: showThemePicker ? "rgba(255,255,255,0.9)" : "rgba(255,255,255,0.1)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={showThemePicker ? th.headerBg : th.headerText} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a10 10 0 0 0 0 20c1.1 0 2-.9 2-2v-1a2 2 0 0 1 2-2h2a4 4 0 0 0 4-4c0-6-4.5-11-10-11z"/><circle cx="7.5" cy="10.5" r="1.2" fill="currentColor"/><circle cx="12" cy="7" r="1.2" fill="currentColor"/><circle cx="16.5" cy="10.5" r="1.2" fill="currentColor"/></svg>
+              </button>
+              {showThemePicker && (
+                <>
+                  <div onClick={() => setShowThemePicker(false)} style={{ position: "fixed", inset: 0, zIndex: 45 }} />
+                  <div style={{ position: "absolute", top: "calc(100% + 10px)", right: 0, zIndex: 46, background: "#fff", borderRadius: 16, padding: "14px 14px 12px", boxShadow: "0 16px 48px rgba(15,23,42,0.18), 0 0 0 1px rgba(15,23,42,0.06)", animation: "panelIn 0.15s ease", display: "flex", flexDirection: "column", gap: 10, minWidth: 300 }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.08em", padding: "0 2px" }}>Theme</div>
+                    <div style={{ display: "flex", gap: 10, justifyContent: "space-between" }}>
+                      {Object.entries(THEMES).map(([key, t]) => {
+                        const on = theme === key;
+                        return (
+                          <button key={key} onClick={() => { setTheme(key); localStorage.setItem("flowycash-theme", key); }} className="bf-btn" title={t.name}
+                            style={{ border: "none", background: "none", padding: 0, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 6, width: 50 }}>
+                            <span style={{ width: 40, height: 40, borderRadius: "50%", background: `linear-gradient(135deg, ${t.headerBg} 0%, ${t.headerBg} 55%, ${t.accent} 55%, ${t.accent} 100%)`, boxShadow: on ? `0 0 0 2px #fff, 0 0 0 4px ${t.accent}` : "0 1px 3px rgba(15,23,42,0.2)", transition: "transform 0.12s, box-shadow 0.12s", transform: on ? "scale(1.06)" : "scale(1)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                              {on && <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>}
+                            </span>
+                            <span style={{ fontSize: 11, fontWeight: on ? 700 : 500, color: on ? "#1e293b" : "#64748b" }}>{t.name}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           {(() => {
@@ -1176,11 +1401,16 @@ export default function BudgetForecast() {
             ];
 
             return (<>
-              {pills.map(({ label, val, color, border, items }) => (
-                <div key={label} className="stat-pill" style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 12px", borderRadius: 20, background: "#fff", border: `1.5px solid ${border}`, position: "relative", cursor: "default" }}>
-                  <span style={{ fontSize: 10, fontWeight: 600, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.05em" }}>{label}</span>
-                  <span style={{ fontSize: 13, fontWeight: 700, color, fontVariantNumeric: "tabular-nums", letterSpacing: "-0.02em" }}>{val}</span>
-                  <span style={{ fontSize: 8, color: "#94a3b8", lineHeight: 1 }}>▼</span>
+              {pills.map(({ label, val, color, border, items }) => {
+                const kind = label === "In" ? "income" : "expense";
+                const active = filterType === kind;
+                return (
+                <div key={label} className="stat-pill" onClick={() => setFilterType(active ? "all" : kind)} title={active ? "Show everything" : `Show ${kind === "income" ? "income" : "expenses"} only`}
+                  style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 12px", borderRadius: 20, background: active ? border : "#fff", border: `1.5px solid ${border}`, position: "relative", cursor: "pointer", boxShadow: active ? "0 0 0 2px rgba(255,255,255,0.6)" : "none" }}>
+                  <span style={{ fontSize: 10, fontWeight: 600, color: active ? "#fff" : "#94a3b8", textTransform: "uppercase", letterSpacing: "0.05em" }}>{label}</span>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: active ? "#fff" : color, fontVariantNumeric: "tabular-nums", letterSpacing: "-0.02em" }}>{val}</span>
+                  {items.length > 0 && <span style={{ fontSize: 8, color: active ? "#fff" : "#94a3b8", lineHeight: 1 }}>▼</span>}
+                  {items.length > 0 && (
                   <div className="stat-popup" style={{ display: "none", position: "absolute", top: "100%", right: 0, marginTop: 4, background: "#fff", borderRadius: 12, border: "1px solid #e2e8f0", boxShadow: "0 8px 24px rgba(0,0,0,0.12)", padding: "10px 14px", zIndex: 40, minWidth: 240, maxHeight: 350, overflowY: "auto" }}>
                     {items.map((item, i) => (
                       <div key={i} style={{ display: "flex", justifyContent: "space-between", gap: 12, padding: "3px 0", fontSize: 12 }}>
@@ -1189,8 +1419,10 @@ export default function BudgetForecast() {
                       </div>
                     ))}
                   </div>
+                  )}
                 </div>
-              ))}
+                );
+              })}
               <div style={{ width: 1, height: 20, background: "#e2e8f0", margin: "0 8px" }} />
               {pills2.map(({ label, val, color, border, items }) => (
                 <div key={label} className={items.length ? "stat-pill" : ""} style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 12px", borderRadius: 20, background: "#fff", border: `1.5px solid ${border}`, position: "relative", cursor: "default" }}>
@@ -1233,13 +1465,14 @@ export default function BudgetForecast() {
         }));
         const sorted = Object.entries(tagTotals).sort((a, b) => (b[1].expense + b[1].income) - (a[1].expense + a[1].income));
         return (
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 6, flexShrink: 0 }}>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8, flexShrink: 0, alignItems: "center" }}>
+            <span style={{ fontSize: 10, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.06em", marginRight: 2 }}>Tags</span>
             {sorted.map(([tag, { income, expense, items }]) => (
               <div key={tag} className="tag-pill" onClick={() => setFilterTag(filterTag === tag ? null : tag)}
-                style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 12px", borderRadius: 14, background: filterTag === tag ? tagColor(tag).text : tagColor(tag).bg, border: `1px solid ${tagColor(tag).text}${filterTag === tag ? "" : "22"}`, fontSize: 13, position: "relative", cursor: "pointer", color: filterTag === tag ? "#fff" : undefined, transition: "all 0.15s" }}>
-                <span style={{ fontWeight: 700, color: filterTag === tag ? "#fff" : tagColor(tag).text, display: "flex", alignItems: "center", gap: 4 }}><TagIconSvg tag={tag} size={12} />{tag}</span>
-                {income > 0 && <span style={{ fontWeight: 700, color: C.greenDark, fontVariantNumeric: "tabular-nums" }}>+{fmtShort(income)}</span>}
-                {expense > 0 && <span style={{ fontWeight: 700, color: C.redDark, fontVariantNumeric: "tabular-nums" }}>-{fmtShort(expense)}</span>}
+                style={{ display: "flex", alignItems: "center", gap: 6, padding: "3px 10px", borderRadius: 999, background: filterTag === tag ? tagColor(tag).text : "#fff", border: `1px solid ${filterTag === tag ? tagColor(tag).text : "#e2e8f0"}`, fontSize: 12, position: "relative", cursor: "pointer", color: filterTag === tag ? "#fff" : "#334155", transition: "all 0.15s" }}>
+                <span style={{ color: filterTag === tag ? "#fff" : tagColor(tag).text, display: "flex", alignItems: "center" }}><TagIconSvg tag={tag} size={11} /></span>
+                <span style={{ fontWeight: 600 }}>{tag}</span>
+                <span style={{ fontWeight: 600, color: filterTag === tag ? "#fff" : "#64748b", fontVariantNumeric: "tabular-nums" }}>{expense > 0 && income > 0 ? `${fmtShort(income)} / ${fmtShort(expense)}` : fmtShort(expense || income)}</span>
                 <div className="tag-popup" style={{ display: "none", position: "absolute", top: "100%", left: 0, marginTop: 4, background: "#fff", borderRadius: 12, border: "1px solid #e2e8f0", boxShadow: "0 8px 24px rgba(0,0,0,0.12)", padding: "10px 14px", zIndex: 40, minWidth: 220, maxHeight: 300, overflowY: "auto" }}>
                   <div style={{ fontSize: 12, fontWeight: 700, color: "#1e293b", marginBottom: 6, borderBottom: "1px solid #f1f5f9", paddingBottom: 6 }}>{tag}</div>
                   {items.sort((a, b) => a.date.localeCompare(b.date)).map((item, i) => (
@@ -1271,18 +1504,108 @@ export default function BudgetForecast() {
         </div>
       )}
 
-      {/* Search bar */}
-      {showSearch && (
-        <div style={{ flexShrink: 0, display: "flex", alignItems: "center", gap: 8, padding: "6px 8px", marginBottom: 4, background: "#f1f5f9", borderRadius: 8, border: "1px solid #e2e8f0" }}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#64748b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-          <input autoFocus value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} onKeyDown={(e) => { if (e.key === "Escape") { setSearchQuery(""); setShowSearch(false); } }}
-            placeholder={`Search ${MONTHS[cM]} ${cY}…`}
-            style={{ flex: 1, border: "none", background: "transparent", fontSize: 13, color: "#1e293b", outline: "none", fontFamily: "inherit" }} />
-          {(() => {
-            const matchCount = (state.transactions || []).filter((tx) => searchQuery.trim() && fuzzyMatch(searchQuery, tx.name || "")).length;
-            return searchQuery.trim() ? <span style={{ fontSize: 11, color: "#64748b" }}>{matchCount} match{matchCount === 1 ? "" : "es"}</span> : null;
-          })()}
-          <button onClick={() => { setSearchQuery(""); setShowSearch(false); }} className="bf-btn" style={{ border: "none", background: "none", color: "#94a3b8", fontSize: 14, cursor: "pointer", padding: "0 4px", fontWeight: 700 }}>×</button>
+      {/* Ask: a conversation with the input at the bottom; short phrases search as you type */}
+      {askOpen && (
+        <div style={{ flexShrink: 0, marginBottom: 8, background: "#fff", borderRadius: 14, border: `1.5px solid ${th.accent}44`, boxShadow: "0 4px 16px rgba(0,0,0,0.06)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+          {(askThread.length > 0 || askBusy) && (
+            <div ref={askThreadRef} style={{ maxHeight: "42vh", overflowY: "auto", padding: "12px 12px 4px", display: "flex", flexDirection: "column", gap: 8, background: "#f8fafc" }}>
+              {askThread.map((m, i) => (
+                <div key={i} style={{ display: "flex", justifyContent: m.role === "user" ? "flex-end" : "flex-start" }}>
+                  <div style={{ maxWidth: "82%", borderRadius: 14, padding: "9px 13px", fontSize: 14, lineHeight: 1.5,
+                    background: m.role === "user" ? th.headerBg : m.error ? "#fef2f2" : "#fff",
+                    color: m.role === "user" ? "#fff" : m.error ? C.redDark : "#1e293b",
+                    border: m.role === "user" ? "none" : `1px solid ${m.error ? "#fecaca" : "#e2e8f0"}`,
+                    borderBottomRightRadius: m.role === "user" ? 4 : 14, borderBottomLeftRadius: m.role === "user" ? 14 : 4 }}>
+                    <div>{m.text}</div>
+                    {m.actions && m.actions.length > 0 && (
+                      <div style={{ marginTop: 8, borderTop: "1px solid #f1f5f9", paddingTop: 8 }}>
+                        {m.actions.map((a, j) => (
+                          <div key={j} style={{ display: "flex", alignItems: "center", gap: 8, padding: "3px 0", fontSize: 13, color: "#334155" }}>
+                            <span style={{ width: 6, height: 6, borderRadius: "50%", background: m.applied ? C.greenDark : th.accent, flexShrink: 0 }} />
+                            {describeAction(a)}
+                          </div>
+                        ))}
+                        {m.applied ? (
+                          <div style={{ marginTop: 6, fontSize: 12, fontWeight: 700, color: C.greenDark }}>Applied</div>
+                        ) : i === askThread.length - 1 ? (
+                          <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                            <button onClick={() => applyAskActions(i)} disabled={askBusy} className="bf-btn" style={{ border: "none", borderRadius: 8, padding: "7px 14px", background: th.accent, color: "#fff", fontSize: 13, fontWeight: 700 }}>{askBusy ? "Applying…" : "Apply"}</button>
+                            <button onClick={() => setAskThread((t) => t.map((x, k) => (k === i ? { ...x, actions: undefined, text: `${x.text} (not applied)` } : x)))} disabled={askBusy} className="bf-btn" style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "7px 14px", background: "#fff", color: "#64748b", fontSize: 13, fontWeight: 600 }}>Not now</button>
+                          </div>
+                        ) : (
+                          <div style={{ marginTop: 6, fontSize: 12, color: "#94a3b8" }}>Not applied</div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+              {askBusy && (
+                <div style={{ display: "flex", justifyContent: "flex-start" }}>
+                  <div style={{ borderRadius: 14, borderBottomLeftRadius: 4, padding: "10px 13px", background: "#fff", border: "1px solid #e2e8f0", display: "flex", alignItems: "center", gap: 10 }}>
+                    <span className="ask-dots" style={{ display: "inline-flex", gap: 4, alignItems: "center" }}>
+                      <span style={{ background: th.accent }} /><span style={{ background: th.accent }} /><span style={{ background: th.accent }} />
+                    </span>
+                    <span style={{ fontSize: 13, color: "#64748b" }}>Reading your calendar…</span>
+                  </div>
+                </div>
+              )}
+              <div style={{ display: "flex", justifyContent: "flex-end", padding: "2px 0 4px" }}>
+                <button onClick={() => setAskThread([])} className="bf-btn" style={{ border: "none", background: "none", fontSize: 11, fontWeight: 600, color: "#94a3b8", cursor: "pointer", padding: 0 }}>Clear conversation</button>
+              </div>
+            </div>
+          )}
+          <form onSubmit={(e) => { e.preventDefault(); askAssistant(askText); }} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderTop: askThread.length > 0 || askBusy ? "1px solid #e2e8f0" : "none" }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={th.accent} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/></svg>
+            <input autoFocus value={askText} onChange={(e) => { setAskText(e.target.value); setSearchQuery(looksLikeSentence(e.target.value) ? "" : e.target.value); }} disabled={askBusy}
+              onKeyDown={(e) => { if (e.key === "Escape") { setAskOpen(false); setAskText(""); setSearchQuery(""); } }}
+              placeholder={askThread.length ? "Reply, ask something else, or search…" : "Search, ask, or tell Flowy: mortgage · where is rent this month? · move Bob to Tuesday"}
+              style={{ flex: 1, minWidth: 0, border: "none", background: "transparent", fontSize: 15, color: "#1e293b", outline: "none", fontFamily: "inherit" }} />
+            <button type="button" onClick={startListening} className="bf-btn" title="Speak"
+              style={{ width: 30, height: 30, borderRadius: "50%", border: listening ? "1.5px solid #ef4444" : "1.5px solid #e2e8f0", background: listening ? "#fee2e2" : "#fff", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, animation: listening ? "pulse 1s infinite" : "none" }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={listening ? "#ef4444" : "#64748b"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+            </button>
+            <button type="submit" disabled={askBusy || !askText.trim()} className="bf-btn" style={{ border: "none", borderRadius: 8, padding: "6px 12px", background: askBusy || !askText.trim() ? "#e2e8f0" : th.accent, color: askBusy || !askText.trim() ? "#94a3b8" : "#fff", fontSize: 13, fontWeight: 700 }}>{askBusy ? "Thinking" : "Send"}</button>
+            <button type="button" onClick={() => { setAskOpen(false); setAskText(""); setSearchQuery(""); }} className="bf-btn" style={{ border: "none", background: "none", color: "#94a3b8", fontSize: 16, cursor: "pointer", padding: "0 4px", fontWeight: 700 }}>×</button>
+          </form>
+        </div>
+      )}
+
+      {/* Search results: where each match falls this month, or the next time it falls */}
+      {askOpen && searchQuery.trim() && !askBusy && (() => {
+        const hits = data.flatMap((dd) => dd.transactions.filter((tx) => fuzzyMatch(searchQuery, tx.name || "")).map((tx) => ({ tx, date: dd.date })));
+        if (hits.length === 0) {
+          const nextStart = dkey(cM === 11 ? cY + 1 : cY, cM === 11 ? 0 : cM + 1, 1);
+          const farY = cM + 6 > 11 ? cY + 1 : cY; const farM = (cM + 6) % 12;
+          const upcoming = state.transactions.filter((tx) => fuzzyMatch(searchQuery, tx.name || ""))
+            .flatMap((tx) => getOccurrences(tx.startDate, tx.recurrence, nextStart, dkey(farY, farM, dim(farY, farM)), tx.endDate).map((d) => ({ tx, date: (state.overrides[`${tx.id}::${d}`] as OverrideData | undefined)?.movedTo || d })))
+            .sort((a, b) => a.date.localeCompare(b.date)).slice(0, 3);
+          return (
+            <div style={{ flexShrink: 0, padding: "6px 10px", marginBottom: 6, fontSize: 12, color: "#64748b", background: "#fff", borderRadius: 8, border: "1px solid #e2e8f0" }}>
+              Nothing matching &ldquo;{searchQuery}&rdquo; in {MONTHS[cM]}.
+              {upcoming.length > 0 && <> Next: {upcoming.map((u, i) => <span key={i}><button onClick={() => { const { year, month } = pdk(u.date); setCY(year); setCM(month); setZoomDay(u.date); }} className="bf-btn" style={{ border: "none", background: "none", padding: 0, color: th.accent, fontWeight: 600, fontSize: 12, textDecoration: "underline" }}>{u.tx.name} on {friendlyDate(u.date)}</button>{i < upcoming.length - 1 ? ", " : ""}</span>)}</>}
+            </div>
+          );
+        }
+        return (
+          <div style={{ flexShrink: 0, display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8, marginTop: -2 }}>
+            {hits.map(({ tx, date }, i) => (
+              <button key={i} onClick={() => { setZoomDay(date); setExpandedDays((prev) => new Set(prev).add(date)); }} className="bf-btn"
+                style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 12px", borderRadius: 999, border: "1px solid #e2e8f0", background: "#fff", fontSize: 12, color: "#1e293b" }}>
+                <span style={{ fontWeight: 600 }}>{tx.name}</span>
+                <span style={{ color: "#64748b" }}>{friendlyDate(date)}</span>
+                <span style={{ fontWeight: 700, fontVariantNumeric: "tabular-nums", color: tx.type === "income" ? C.greenDark : C.redDark }}>{fmt(Math.abs(tx.amount))}</span>
+              </button>
+            ))}
+          </div>
+        );
+      })()}
+
+      {/* Type filter indicator */}
+      {filterType !== "all" && (
+        <div style={{ flexShrink: 0, display: "flex", alignItems: "center", gap: 8, padding: "4px 8px", marginBottom: 4, background: filterType === "expense" ? C.redBg : C.greenBg, borderRadius: 8, border: `1px solid ${filterType === "expense" ? C.redBorder : C.greenBorder}` }}>
+          <span style={{ fontSize: 12, fontWeight: 600, color: filterType === "expense" ? C.redDark : C.greenDark }}>Showing {filterType === "expense" ? "expenses" : "income"} only</span>
+          <button onClick={() => setFilterType("all")} className="bf-btn" style={{ border: "none", background: "none", color: filterType === "expense" ? C.redDark : C.greenDark, fontSize: 14, cursor: "pointer", padding: "0 4px", fontWeight: 700 }}>×</button>
         </div>
       )}
 
@@ -1418,238 +1741,6 @@ export default function BudgetForecast() {
         );
       })()}
 
-      {/* 90-Day Forecast Chart Modal */}
-      {show3MChart && (() => {
-        // Compute 90 days of daily balances starting from today
-        const today = new Date();
-        const allTxs = (state.transactions || []);
-        const mResets = state.balanceResets || {};
-
-        // First compute today's starting balance by walking from earliest tx
-        let startBal = state.startingBalance;
-        const allStarts = allTxs.map((t) => t.startDate).filter(Boolean).sort();
-        const earliest = allStarts[0];
-        const todayKey2 = dkey(today.getFullYear(), today.getMonth(), today.getDate());
-        if (earliest && earliest < todayKey2) {
-          const sD = new Date(parseInt(earliest.slice(0,4)), parseInt(earliest.slice(5,7))-1, parseInt(earliest.slice(8,10)));
-          for (let cur = new Date(sD); cur < today; cur.setDate(cur.getDate() + 1)) {
-            const dk = dkey(cur.getFullYear(), cur.getMonth(), cur.getDate());
-            if (mResets[dk] !== undefined) startBal = mResets[dk];
-            const mStart = dkey(cur.getFullYear(), cur.getMonth(), 1);
-            const mEnd = dkey(cur.getFullYear(), cur.getMonth(), dim(cur.getFullYear(), cur.getMonth()));
-            allTxs.forEach((tx) => {
-              const occs = getOccurrences(tx.startDate, tx.recurrence, mStart, mEnd, tx.endDate);
-              occs.forEach((odk) => {
-                if (odk !== dk) return;
-                const ok = `${tx.id}::${odk}`;
-                const ov = state.overrides[ok] as OverrideData | undefined;
-                if (ov?.deleted) return;
-                const disp = ov?.movedTo || odk;
-                if (disp !== dk) return;
-                const ovClean = ov ? Object.fromEntries(Object.entries(ov).filter(([, v]) => v != null)) : {};
-                const eff = ov ? { ...tx, ...ovClean } : tx;
-                startBal += ((eff.type || tx.type) === "income" ? 1 : -1) * Math.abs(eff.amount ?? tx.amount);
-              });
-            });
-          }
-        }
-
-        // Now generate 90 days from today
-        const daysN: { date: string; bal: number; month: number; day: number; monthName: string }[] = [];
-        let bal90 = startBal;
-        const totalChartDays = chartMonths * 30;
-        for (let i = 0; i < totalChartDays; i++) {
-          const d = new Date(today);
-          d.setDate(d.getDate() + i);
-          const dk = dkey(d.getFullYear(), d.getMonth(), d.getDate());
-          if (mResets[dk] !== undefined) bal90 = mResets[dk];
-          const mStart = dkey(d.getFullYear(), d.getMonth(), 1);
-          const mEnd = dkey(d.getFullYear(), d.getMonth(), dim(d.getFullYear(), d.getMonth()));
-          allTxs.forEach((tx) => {
-            const occs = getOccurrences(tx.startDate, tx.recurrence, mStart, mEnd, tx.endDate);
-            occs.forEach((odk) => {
-              if (odk !== dk) return;
-              const ok = `${tx.id}::${odk}`;
-              const ov = state.overrides[ok] as OverrideData | undefined;
-              if (ov?.deleted) return;
-              const disp = ov?.movedTo || odk;
-              if (disp !== dk) return;
-              const ovClean = ov ? Object.fromEntries(Object.entries(ov).filter(([, v]) => v != null)) : {};
-              const eff = ov ? { ...tx, ...ovClean } : tx;
-              bal90 += ((eff.type || tx.type) === "income" ? 1 : -1) * Math.abs(eff.amount ?? tx.amount);
-            });
-          });
-          daysN.push({ date: dk, bal: Math.round(bal90 * 100) / 100, month: d.getMonth(), day: d.getDate(), monthName: MONTHS[d.getMonth()] });
-        }
-
-        const allBals = daysN.map((d) => d.bal);
-        const maxB = Math.max(...allBals, 0);
-        const minB = Math.min(...allBals, 0);
-        const range = maxB - minB || 1;
-        const negDaysN = daysN.filter((d) => d.bal < 0);
-        const lowDayN = daysN.reduce((min, d) => d.bal < min.bal ? d : min, daysN[0]);
-        const cw = 900, ch = 220, padL = 55, padT = 10, padB = 30;
-        const chartW = cw - padL, chartH = ch - padT - padB;
-        const zeroY = padT + ((maxB - 0) / range) * chartH;
-
-        // Month boundaries
-        const monthBounds: { month: string; startIdx: number }[] = [];
-        let prevMonth = -1;
-        daysN.forEach((d, i) => { if (d.month !== prevMonth) { monthBounds.push({ month: d.monthName, startIdx: i }); prevMonth = d.month; } });
-
-        // Tag pie data for the 90 days
-        const tagExpN: Record<string, number> = {};
-        daysN.forEach((dd) => {
-          const mStart = dkey(parseInt(dd.date.slice(0,4)), parseInt(dd.date.slice(5,7))-1, 1);
-          const mEnd = dkey(parseInt(dd.date.slice(0,4)), parseInt(dd.date.slice(5,7))-1, dim(parseInt(dd.date.slice(0,4)), parseInt(dd.date.slice(5,7))-1));
-          allTxs.forEach((tx) => {
-            if (tx.type !== "expense") return;
-            const occs = getOccurrences(tx.startDate, tx.recurrence, mStart, mEnd, tx.endDate);
-            occs.forEach((odk) => {
-              if (odk !== dd.date) return;
-              const ok = `${tx.id}::${odk}`;
-              const ov = state.overrides[ok] as OverrideData | undefined;
-              if (ov?.deleted) return;
-              const disp = ov?.movedTo || odk;
-              if (disp !== dd.date) return;
-              const tags = ((tx as any).tags || "untagged").split(",").map((s: string) => s.trim()).filter(Boolean);
-              if (!tags.length) tags.push("untagged");
-              const ovClean = ov ? Object.fromEntries(Object.entries(ov).filter(([, v]) => v != null)) : {};
-              const eff = ov ? { ...tx, ...ovClean } : tx;
-              const amt = Math.abs(eff.amount ?? tx.amount);
-              tags.forEach((tag: string) => { tagExpN[tag] = (tagExpN[tag] || 0) + amt; });
-            });
-          });
-        });
-        const tagSortedN = Object.entries(tagExpN).sort((a, b) => b[1] - a[1]);
-        const tagTotalN = tagSortedN.reduce((s, [, v]) => s + v, 0) || 1;
-
-        // Pie chart geometry
-        const pieR = 70, pieCx = 80, pieCy = 80;
-        let pieAngle = 0;
-        const pieSlices = tagSortedN.map(([tag, total]) => {
-          const pct = total / tagTotalN;
-          const startAngle = pieAngle;
-          pieAngle += pct * 360;
-          const endAngle = pieAngle;
-          const startRad = (startAngle - 90) * Math.PI / 180;
-          const endRad = (endAngle - 90) * Math.PI / 180;
-          const largeArc = pct > 0.5 ? 1 : 0;
-          const x1 = pieCx + pieR * Math.cos(startRad);
-          const y1 = pieCy + pieR * Math.sin(startRad);
-          const x2 = pieCx + pieR * Math.cos(endRad);
-          const y2 = pieCy + pieR * Math.sin(endRad);
-          const tc = tagColor(tag);
-          return { tag, total, pct, path: `M${pieCx},${pieCy} L${x1},${y1} A${pieR},${pieR} 0 ${largeArc} 1 ${x2},${y2} Z`, color: tc.text, bg: tc.bg };
-        });
-
-        // Points for chart
-        const pts90 = daysN.map((d, i) => ({
-          x: padL + (i / (daysN.length - 1)) * chartW,
-          y: padT + ((maxB - d.bal) / range) * chartH,
-          ...d,
-        }));
-        const line90 = pts90.map((p) => `${p.x},${p.y}`).join(" ");
-        const area90 = [...pts90.map((p) => `${p.x},${p.y}`), `${pts90[pts90.length-1].x},${zeroY}`, `${pts90[0].x},${zeroY}`].join(" ");
-
-        return (
-          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", backdropFilter: "blur(8px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, animation: "panelIn 0.18s ease" }}
-            onClick={() => setShow3MChart(false)}>
-            <div style={{ background: "#fff", borderRadius: 20, width: 800, maxWidth: "95vw", maxHeight: "90vh", overflow: "auto", boxShadow: "0 24px 80px rgba(0,0,0,0.2)" }}
-              onClick={(e) => e.stopPropagation()}>
-              <div style={{ background: th.headerBg, padding: "20px 24px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <div>
-                  <div style={{ fontSize: 12, color: th.headerText, opacity: 0.7 }}>Cashflow Forecast</div>
-                  <div style={{ fontSize: 20, fontWeight: 800, color: "#fff" }}>Today → {daysN[totalChartDays - 1]?.monthName} {daysN[totalChartDays - 1]?.day}</div>
-                  <div style={{ display: "flex", gap: 4, marginTop: 8 }}>
-                    {[1, 2, 3, 4, 5, 6].map((m) => (
-                      <button key={m} onClick={() => setChartMonths(m)} className="bf-btn"
-                        style={{ padding: "4px 10px", borderRadius: 8, border: "none", fontSize: 11, fontWeight: 700,
-                          background: chartMonths === m ? "#fff" : "rgba(255,255,255,0.15)",
-                          color: chartMonths === m ? th.headerBg : th.headerText }}>
-                        {m}mo
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <button onClick={() => setShow3MChart(false)} className="bf-btn" style={{ border: "none", background: "rgba(255,255,255,0.15)", color: "#fff", fontSize: 18, width: 28, height: 28, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
-              </div>
-              <div style={{ padding: "20px 24px" }}>
-                {/* Chart */}
-                <svg viewBox={`0 0 ${cw} ${ch}`} style={{ width: "100%", height: "auto" }}>
-                  <defs>
-                    <clipPath id="c90above"><rect x={padL} y={0} width={chartW} height={zeroY} /></clipPath>
-                    <clipPath id="c90below"><rect x={padL} y={zeroY} width={chartW} height={ch - zeroY} /></clipPath>
-                  </defs>
-                  <line x1={padL} y1={zeroY} x2={cw} y2={zeroY} stroke="#94a3b8" strokeWidth="0.5" />
-                  <text x={padL - 4} y={padT + 4} textAnchor="end" fill="#94a3b8" fontSize="8">{fmtShort(maxB)}</text>
-                  <text x={padL - 4} y={zeroY + 3} textAnchor="end" fill="#94a3b8" fontSize="8">$0</text>
-                  {minB < 0 && <text x={padL - 4} y={ch - padB} textAnchor="end" fill="#ef4444" fontSize="8">{fmtShort(minB)}</text>}
-                  {/* Month dividers */}
-                  {monthBounds.slice(1).map((mb, i) => {
-                    const x = padL + (mb.startIdx / (daysN.length - 1)) * chartW;
-                    return <g key={i}><line x1={x} y1={padT} x2={x} y2={ch - padB} stroke="#e2e8f0" strokeWidth="1" strokeDasharray="4 4" /><text x={x + 4} y={ch - 10} fill="#64748b" fontSize="9" fontWeight="600">{mb.month}</text></g>;
-                  })}
-                  <text x={padL + 4} y={ch - 10} fill="#64748b" fontSize="9" fontWeight="600">{monthBounds[0]?.month}</text>
-                  <polygon points={area90} fill="rgba(16,185,129,0.1)" clipPath="url(#c90above)" />
-                  <polygon points={area90} fill="rgba(239,68,68,0.12)" clipPath="url(#c90below)" />
-                  <polyline points={line90} fill="none" stroke="#10b981" strokeWidth="1.5" strokeLinejoin="round" clipPath="url(#c90above)" />
-                  <polyline points={line90} fill="none" stroke="#ef4444" strokeWidth="1.5" strokeLinejoin="round" clipPath="url(#c90below)" />
-                  {pts90.filter((p) => p.bal < 0).map((p, i) => <circle key={i} cx={p.x} cy={p.y} r="2" fill="#ef4444" />)}
-                  <line x1={padL} y1={padT} x2={padL} y2={ch - padB} stroke="#cbd5e1" strokeWidth="1" />
-                  <line x1={padL} y1={ch - padB} x2={cw} y2={ch - padB} stroke="#cbd5e1" strokeWidth="1" />
-                </svg>
-                {/* Stats */}
-                <div style={{ display: "flex", gap: 12, marginTop: 16 }}>
-                  <div style={{ flex: 1, padding: "12px", borderRadius: 10, background: "#f8fafc", textAlign: "center" }}>
-                    <div style={{ fontSize: 10, color: "#94a3b8", fontWeight: 600, textTransform: "uppercase" }}>Today</div>
-                    <div style={{ fontSize: 18, fontWeight: 800, color: daysN[0]?.bal < 0 ? C.redDark : C.greenDark }}>{fmt(daysN[0]?.bal || 0)}</div>
-                  </div>
-                  <div style={{ flex: 1, padding: "12px", borderRadius: 10, background: "#f8fafc", textAlign: "center" }}>
-                    <div style={{ fontSize: 10, color: "#94a3b8", fontWeight: 600, textTransform: "uppercase" }}>Lowest</div>
-                    <div style={{ fontSize: 18, fontWeight: 800, color: lowDayN.bal < 0 ? C.redDark : "#64748b" }}>{fmt(lowDayN.bal)}</div>
-                    <div style={{ fontSize: 10, color: "#94a3b8" }}>{lowDayN.monthName} {lowDayN.day}</div>
-                  </div>
-                  <div style={{ flex: 1, padding: "12px", borderRadius: 10, background: "#f8fafc", textAlign: "center" }}>
-                    <div style={{ fontSize: 10, color: "#94a3b8", fontWeight: 600, textTransform: "uppercase" }}>Day {totalChartDays}</div>
-                    <div style={{ fontSize: 18, fontWeight: 800, color: daysN[totalChartDays - 1]?.bal < 0 ? C.redDark : C.greenDark }}>{fmt(daysN[totalChartDays - 1]?.bal || 0)}</div>
-                  </div>
-                  <div style={{ flex: 1, padding: "12px", borderRadius: 10, background: negDaysN.length ? "#fff5f5" : "#f0fdf4", textAlign: "center" }}>
-                    <div style={{ fontSize: 10, color: "#94a3b8", fontWeight: 600, textTransform: "uppercase" }}>Negative Days</div>
-                    <div style={{ fontSize: 18, fontWeight: 800, color: negDaysN.length ? C.redDark : C.greenDark }}>{negDaysN.length}</div>
-                  </div>
-                </div>
-                {/* Tag Pie Chart */}
-                {tagSortedN.length > 0 && (
-                  <div style={{ marginTop: 20 }}>
-                    <div style={{ fontSize: 11, fontWeight: 600, color: "#94a3b8", textTransform: "uppercase", marginBottom: 12 }}>{totalChartDays}-Day Spending by Category</div>
-                    <div style={{ display: "flex", gap: 24, alignItems: "center" }}>
-                      <svg viewBox="0 0 160 160" style={{ width: 160, height: 160, flexShrink: 0 }}>
-                        {pieSlices.map((s) => <path key={s.tag} d={s.path} fill={s.color} opacity={0.8} />)}
-                      </svg>
-                      <div style={{ flex: 1 }}>
-                        {tagSortedN.map(([tag, total]) => {
-                          const tc = tagColor(tag);
-                          const pct = ((total / tagTotalN) * 100).toFixed(0);
-                          return (
-                            <div key={tag} style={{ display: "flex", alignItems: "center", gap: 8, padding: "3px 0", fontSize: 12 }}>
-                              <div style={{ width: 10, height: 10, borderRadius: 2, background: tc.text, flexShrink: 0 }} />
-                              <span style={{ color: "#1e293b", flex: 1 }}>{tag}</span>
-                              <span style={{ fontWeight: 700, color: C.redDark, fontVariantNumeric: "tabular-nums" }}>{fmt(total)}</span>
-                              <span style={{ color: "#94a3b8", fontSize: 10, width: 30, textAlign: "right" }}>{pct}%</span>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        );
-      })()}
-
       {/* Dashboard Modal */}
       {showDashboard && (() => {
         const balances = data.map((d) => d.balance);
@@ -1666,13 +1757,14 @@ export default function BudgetForecast() {
         data.forEach((d) => d.transactions.filter((t) => t.type === "expense").forEach((t) => { expMap[t.name] = (expMap[t.name] || 0) + Math.abs(t.amount); }));
         const topExp = Object.entries(expMap).sort((a, b) => b[1] - a[1]).slice(0, 8);
 
-        // Tag breakdown
+        // Tag breakdown. Untagged items get a best-guess tag from their name so
+        // the chart is not dominated by an "untagged" slice.
         const tagExp: Record<string, number> = {};
+        let guessedCount = 0;
         data.forEach((d) => d.transactions.filter((t) => t.type === "expense").forEach((t) => {
-          ((t as any).tags || "untagged").split(",").forEach((tag: string) => {
-            const k = tag.trim() || "untagged";
-            tagExp[k] = (tagExp[k] || 0) + Math.abs(t.amount);
-          });
+          let tags = ((t as any).tags || "").split(",").map((x: string) => x.trim()).filter(Boolean);
+          if (tags.length === 0) { const g = guessTag(t.name || ""); if (g) guessedCount++; tags = [g || "untagged"]; }
+          tags.forEach((k: string) => { tagExp[k] = (tagExp[k] || 0) + Math.abs(t.amount); });
         }));
         const tagSorted = Object.entries(tagExp).sort((a, b) => b[1] - a[1]);
         const tagTotal = tagSorted.reduce((s, [, v]) => s + v, 0) || 1;
@@ -1840,34 +1932,69 @@ export default function BudgetForecast() {
                   ))}
                 </div>
 
-                {/* Mini Chart */}
-                <div style={{ background: "#f8fafc", borderRadius: 12, padding: "12px 16px", marginBottom: 20 }}>
-                  <div style={{ fontSize: 11, fontWeight: 600, color: "#94a3b8", textTransform: "uppercase", marginBottom: 8 }}>Balance Trend</div>
-                  <svg viewBox={`0 0 ${cw} ${ch}`} style={{ width: "100%", height: 80 }}>
-                    <defs>
-                      <clipPath id="dabove"><rect x={cpad} y={0} width={cw - cpad} height={zeroY} /></clipPath>
-                      <clipPath id="dbelow"><rect x={cpad} y={zeroY} width={cw - cpad} height={ch - zeroY} /></clipPath>
-                    </defs>
-                    <line x1={cpad} y1={zeroY} x2={cw} y2={zeroY} stroke="#e2e8f0" strokeWidth="0.5" />
-                    <text x={cpad - 4} y={8} textAnchor="end" fill="#94a3b8" fontSize="7">{fmtShort(maxB)}</text>
-                    <text x={cpad - 4} y={zeroY + 3} textAnchor="end" fill="#94a3b8" fontSize="7">$0</text>
-                    {minB < 0 && <text x={cpad - 4} y={ch - 2} textAnchor="end" fill="#ef4444" fontSize="7">{fmtShort(minB)}</text>}
-                    {(() => {
-                      const pts = balances.map((b, i) => `${cpad + (i / (balances.length - 1)) * (cw - cpad)},${4 + ((maxB - b) / range) * (ch - 8)}`);
-                      const area = [...pts, `${cw},${zeroY}`, `${cpad},${zeroY}`];
-                      return (<>
-                        <polygon points={area.join(" ")} fill="rgba(16,185,129,0.12)" clipPath="url(#dabove)" />
-                        <polygon points={area.join(" ")} fill="rgba(239,68,68,0.15)" clipPath="url(#dbelow)" />
-                        <polyline points={pts.join(" ")} fill="none" stroke="#10b981" strokeWidth="1.5" clipPath="url(#dabove)" />
-                        <polyline points={pts.join(" ")} fill="none" stroke="#ef4444" strokeWidth="1.5" clipPath="url(#dbelow)" />
-                      </>);
-                    })()}
-                  </svg>
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 9, color: "#94a3b8", marginTop: 4 }}>
-                    <span>High: {fmt(maxB)} ({friendlyDate(highDay.date)})</span>
-                    <span style={{ color: minB < 0 ? "#ef4444" : "#94a3b8" }}>Low: {fmt(minB)} ({friendlyDate(lowDay.date)})</span>
-                  </div>
-                </div>
+                {/* Forecast chart (was the separate Cashflow Chart modal) */}
+                {(() => {
+                  const { daysN, totalChartDays, maxB, minB, negDaysN, lowDayN, cw, ch, padL, padT, padB, chartW, zeroY, monthBounds, pts90, line90, area90 } = buildForecast(chartMonths);
+                  return (
+                    <div style={{ background: "#f8fafc", borderRadius: 12, padding: "14px 16px", marginBottom: 20 }}>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+                        <div style={{ fontSize: 11, fontWeight: 600, color: "#94a3b8", textTransform: "uppercase" }}>Forecast from today</div>
+                        <div style={{ display: "flex", gap: 4 }}>
+                          {[1, 2, 3, 6].map((m) => (
+                            <button key={m} onClick={() => setChartMonths(m)} className="bf-btn"
+                              style={{ padding: "3px 10px", borderRadius: 8, border: "none", fontSize: 11, fontWeight: 700, background: chartMonths === m ? th.headerBg : "#e2e8f0", color: chartMonths === m ? "#fff" : "#64748b" }}>
+                              {m}mo
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      {/* Chart */}
+                      <svg viewBox={`0 0 ${cw} ${ch}`} style={{ width: "100%", height: "auto" }}>
+                        <defs>
+                          <clipPath id="c90above"><rect x={padL} y={0} width={chartW} height={zeroY} /></clipPath>
+                          <clipPath id="c90below"><rect x={padL} y={zeroY} width={chartW} height={ch - zeroY} /></clipPath>
+                        </defs>
+                        <line x1={padL} y1={zeroY} x2={cw} y2={zeroY} stroke="#94a3b8" strokeWidth="0.5" />
+                        <text x={padL - 4} y={padT + 4} textAnchor="end" fill="#94a3b8" fontSize="8">{fmtShort(maxB)}</text>
+                        <text x={padL - 4} y={zeroY + 3} textAnchor="end" fill="#94a3b8" fontSize="8">$0</text>
+                        {minB < 0 && <text x={padL - 4} y={ch - padB} textAnchor="end" fill="#ef4444" fontSize="8">{fmtShort(minB)}</text>}
+                        {/* Month dividers */}
+                        {monthBounds.slice(1).map((mb, i) => {
+                          const x = padL + (mb.startIdx / (daysN.length - 1)) * chartW;
+                          return <g key={i}><line x1={x} y1={padT} x2={x} y2={ch - padB} stroke="#e2e8f0" strokeWidth="1" strokeDasharray="4 4" /><text x={x + 4} y={ch - 10} fill="#64748b" fontSize="9" fontWeight="600">{mb.month}</text></g>;
+                        })}
+                        <text x={padL + 4} y={ch - 10} fill="#64748b" fontSize="9" fontWeight="600">{monthBounds[0]?.month}</text>
+                        <polygon points={area90} fill="rgba(16,185,129,0.1)" clipPath="url(#c90above)" />
+                        <polygon points={area90} fill="rgba(239,68,68,0.12)" clipPath="url(#c90below)" />
+                        <polyline points={line90} fill="none" stroke="#10b981" strokeWidth="1.5" strokeLinejoin="round" clipPath="url(#c90above)" />
+                        <polyline points={line90} fill="none" stroke="#ef4444" strokeWidth="1.5" strokeLinejoin="round" clipPath="url(#c90below)" />
+                        {pts90.filter((p) => p.bal < 0).map((p, i) => <circle key={i} cx={p.x} cy={p.y} r="2" fill="#ef4444" />)}
+                        <line x1={padL} y1={padT} x2={padL} y2={ch - padB} stroke="#cbd5e1" strokeWidth="1" />
+                        <line x1={padL} y1={ch - padB} x2={cw} y2={ch - padB} stroke="#cbd5e1" strokeWidth="1" />
+                      </svg>
+                      {/* Stats */}
+                      <div style={{ display: "flex", gap: 12, marginTop: 16 }}>
+                        <div style={{ flex: 1, padding: "12px", borderRadius: 10, background: "#f8fafc", textAlign: "center" }}>
+                          <div style={{ fontSize: 10, color: "#94a3b8", fontWeight: 600, textTransform: "uppercase" }}>Today</div>
+                          <div style={{ fontSize: 18, fontWeight: 800, color: daysN[0]?.bal < 0 ? C.redDark : C.greenDark }}>{fmt(daysN[0]?.bal || 0)}</div>
+                        </div>
+                        <div style={{ flex: 1, padding: "12px", borderRadius: 10, background: "#f8fafc", textAlign: "center" }}>
+                          <div style={{ fontSize: 10, color: "#94a3b8", fontWeight: 600, textTransform: "uppercase" }}>Lowest</div>
+                          <div style={{ fontSize: 18, fontWeight: 800, color: lowDayN.bal < 0 ? C.redDark : "#64748b" }}>{fmt(lowDayN.bal)}</div>
+                          <div style={{ fontSize: 10, color: "#94a3b8" }}>{lowDayN.monthName} {lowDayN.day}</div>
+                        </div>
+                        <div style={{ flex: 1, padding: "12px", borderRadius: 10, background: "#f8fafc", textAlign: "center" }}>
+                          <div style={{ fontSize: 10, color: "#94a3b8", fontWeight: 600, textTransform: "uppercase" }}>Day {totalChartDays}</div>
+                          <div style={{ fontSize: 18, fontWeight: 800, color: daysN[totalChartDays - 1]?.bal < 0 ? C.redDark : C.greenDark }}>{fmt(daysN[totalChartDays - 1]?.bal || 0)}</div>
+                        </div>
+                        <div style={{ flex: 1, padding: "12px", borderRadius: 10, background: negDaysN.length ? "#fff5f5" : "#f0fdf4", textAlign: "center" }}>
+                          <div style={{ fontSize: 10, color: "#94a3b8", fontWeight: 600, textTransform: "uppercase" }}>Negative Days</div>
+                          <div style={{ fontSize: 18, fontWeight: 800, color: negDaysN.length ? C.redDark : C.greenDark }}>{negDaysN.length}</div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 {/* Two columns: Top Expenses + Tag Breakdown */}
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 20 }}>
@@ -1884,7 +2011,7 @@ export default function BudgetForecast() {
 
                   {/* Tag Pie Chart */}
                   <div style={{ background: "#f8fafc", borderRadius: 12, padding: "14px 16px" }}>
-                    <div style={{ fontSize: 11, fontWeight: 600, color: "#94a3b8", textTransform: "uppercase", marginBottom: 10 }}>Spending by Category</div>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: "#94a3b8", textTransform: "uppercase", marginBottom: 10 }}>Spending by Category{guessedCount > 0 ? <span style={{ textTransform: "none", fontWeight: 500, letterSpacing: 0 }}> · {guessedCount} untagged item{guessedCount === 1 ? "" : "s"} guessed from name</span> : null}</div>
                     <div style={{ display: "flex", gap: 16, alignItems: "center" }}>
                       <svg viewBox="0 0 140 140" style={{ width: 120, height: 120, flexShrink: 0 }}>
                         {(() => {
@@ -2643,7 +2770,7 @@ export default function BudgetForecast() {
                 Week of {wk.find(Boolean) ? `${MONTHS[cM]} ${wk.find(Boolean)}` : ""}
               </span>
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 8, flex: 1, minHeight: 0 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(7, minmax(0, 1fr))", gap: 8, flex: 1, minHeight: 0, overflowY: "auto", alignContent: "start" }}>
               {DAY_NAMES.map((dn, i) => {
                 const day = wk[i];
                 const dd = day ? dayMap[dkey(cY, cM, day)] : null;
@@ -2652,7 +2779,7 @@ export default function BudgetForecast() {
                 const isPast = key < todayKey;
                 if (!day) return <div key={key} style={{ background: "#f8fafc", borderRadius: 12, opacity: 0.3 }} />;
                 return (
-                  <div key={key} style={{ background: dd && dd.balance < 0 ? "#fff5f5" : th.calBg, border: `1px solid ${th.gridBorder}`, borderRadius: 12, display: "flex", flexDirection: "column", overflow: "hidden", opacity: isPast ? 0.55 : 1 }}>
+                  <div key={key} style={{ background: dd && dd.balance < 0 ? "#fff5f5" : th.calBg, border: `1px solid ${th.gridBorder}`, borderRadius: 12, display: "flex", flexDirection: "column", minHeight: 160, opacity: isPast ? 0.55 : 1 }}>
                     <div style={{ padding: "10px 12px 6px", display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: `1px solid ${th.gridBorder}` }}>
                       <div>
                         <div style={{ fontSize: 11, color: "#94a3b8", fontWeight: 600, textTransform: "uppercase" }}>{dn}</div>
@@ -2660,8 +2787,8 @@ export default function BudgetForecast() {
                       </div>
                       {dd?.hasReset && <span style={{ fontSize: 9, fontWeight: 700, background: C.blueDark, color: "#fff", padding: "2px 6px", borderRadius: 4 }}>RST</span>}
                     </div>
-                    <div style={{ flex: 1, overflowY: "auto", padding: "6px 10px" }}>
-                      {dd?.transactions.map((tx, ti) => (
+                    <div style={{ flex: 1, padding: "6px 10px" }}>
+                      {visibleTx(dd?.transactions || []).map((tx, ti) => (
                         <div key={ti} className="tx-chip" draggable onDragStart={(e) => onDragStart(e, tx, tx.occurrenceDate)}
                           onClick={(e) => { e.stopPropagation(); openEdit(tx, tx.occurrenceDate); }}
                           style={{ fontSize: 13, padding: "4px 8px", marginBottom: 4, borderRadius: 6,
@@ -2669,13 +2796,13 @@ export default function BudgetForecast() {
                             borderLeft: (tx as any).highlight ? `3px solid ${hlColor((tx as any).highlight).border}` : "none",
                             display: "flex", alignItems: "center", gap: 6 }}>
                           <span style={{ width: 14, flexShrink: 0, fontSize: 13, color: tx.recurrence !== "none" ? "#64748b" : "transparent", lineHeight: 1, textAlign: "center" }}>{tx.recurrence !== "none" ? "↻" : ""}</span>
-                          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: th.itemText }}>{tx.name}</span>
+                          <span style={{ flex: "1 1 auto", minWidth: 36, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", color: th.itemText }}>{tx.name}</span>
                           {(tx as any).note && <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>}
                           {(tx as any).autopay && <svg width="9" height="11" viewBox="0 0 8 10" style={{ marginLeft: "auto", flexShrink: 0, opacity: 0.6 }}><path d="M4.5 0L0 6h3.5L3 10l5-6H4.5z" fill="#f59e0b"/></svg>}
                           <span style={{ marginLeft: (tx as any).autopay ? 2 : "auto", flexShrink: 0, fontWeight: 700, fontVariantNumeric: "tabular-nums", fontSize: 12, color: tx.type === "income" ? C.greenDark : C.redDark }}>{fmt(Math.abs(tx.amount))}</span>
                         </div>
                       ))}
-                      {(!dd || dd.transactions.length === 0) && <div style={{ color: "#cbd5e1", fontSize: 12, padding: "8px 0" }}>No transactions</div>}
+                      {visibleTx(dd?.transactions || []).length === 0 && <div style={{ color: "#cbd5e1", fontSize: 12, padding: "8px 0" }}>No transactions</div>}
                     </div>
                     <div onClick={(e) => { e.stopPropagation(); openResetPanel(key); }}
                       style={{ flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 10px", background: th.totalBg, borderTop: `1px solid ${th.totalBorder}`, cursor: "pointer" }}>
@@ -2692,8 +2819,8 @@ export default function BudgetForecast() {
         );
       })()}
       {view === "calendar" && zoomWeek === null && (
-        <div data-tour="calendar" style={{ overflowX: "auto", flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gridTemplateRows: `45px repeat(${weeks.length}, 1fr)`, borderRadius: 14, overflow: "hidden", border: `1px solid ${th.gridBorder}`, flex: 1 }}>
+        <div data-tour="calendar" style={{ overflowX: "auto", overflowY: "auto", flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(7, minmax(0, 1fr))", gridTemplateRows: `45px repeat(${weeks.length}, minmax(${Math.max(72, fontSize * 7)}px, 1fr))`, borderRadius: 14, overflow: "hidden", border: `1px solid ${th.gridBorder}`, flex: "1 0 auto" }}>
             {DAYS.map((d, i) => (
               <div key={i} style={{ padding: "10px 4px", fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", color: th.dayBarText, textAlign: "center", background: th.dayBarBg, borderBottom: `1px solid ${th.dayBarBorder}`, display: "flex", alignItems: "center", justifyContent: "center" }}>{d}</div>
             ))}
@@ -2707,7 +2834,7 @@ export default function BudgetForecast() {
                     const isLogoCell = `${wi}-${di}` === lastEmptyKey;
                     return (
                       <div key={`${wi}-${di}`} style={{ minHeight: 0, background: th.calBg, borderTop: `1px solid ${th.gridBorder}`, borderRight: di < 6 ? `1px solid ${th.gridBorder}` : "none", display: "flex", alignItems: "center", justifyContent: "center", padding: 8 }}>
-                        {isLogoCell && <img src="/logo.png" alt="" style={{ maxWidth: "90%", maxHeight: "80%", objectFit: "contain" }} />}
+                        {isLogoCell && <img src="/logo.png" alt="" style={{ maxWidth: "min(60%, 110px)", maxHeight: "min(60%, 80px)", objectFit: "contain", opacity: 0.85 }} />}
                       </div>
                     );
                   }
@@ -2718,7 +2845,7 @@ export default function BudgetForecast() {
                 const isSel = selDay === key;
                 return (
                   <div key={key} className="cal-cell"
-                    style={{ minHeight: 0,position: "relative", cursor: "pointer", overflow: "hidden",
+                    style={{ minHeight: 0, position: "relative", cursor: "pointer",
                       opacity: isPast ? 0.55 : 1,
                       background: isSel ? "#f8fafc" : dd && dd.balance < 0 ? "#fff5f5" : "#fff",
                       borderTop: `1px solid ${th.gridBorder}`,
@@ -2731,7 +2858,7 @@ export default function BudgetForecast() {
                     onDrop={(e) => onDrop(e, key)}
                   >
                     {dropTgt === key && <div style={{ position: "absolute", inset: 2, background: "rgba(59,130,246,0.06)", border: "2px dashed #3b82f6", borderRadius: 8, pointerEvents: "none", zIndex: 5 }} />}
-                    <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "6px 7px" }}
+                    <div style={{ flex: 1, minHeight: 0, padding: "6px 7px" }}
                       onClick={(e) => { if (e.target === e.currentTarget) openAdd(key); }}>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 3 }}>
                         {isToday ? (
@@ -2752,7 +2879,7 @@ export default function BudgetForecast() {
                         </div>
                       )}
                       <div>
-                        {dd?.transactions.map((tx, i) => (
+                        {visibleTx(dd?.transactions || []).map((tx, i) => (
                           <div key={i} className="tx-chip" draggable onDragStart={(e) => onDragStart(e, tx, tx.occurrenceDate)}
                             onClick={(e) => { e.stopPropagation(); openEdit(tx, tx.occurrenceDate); }}
                             style={{ fontSize, fontWeight: 600, padding: "1px 6px", marginTop: 1, borderRadius: 5, lineHeight: 1.3,
@@ -2760,13 +2887,13 @@ export default function BudgetForecast() {
                               borderLeft: (tx as any).highlight ? `3px solid ${hlColor((tx as any).highlight).border}` : "none",
                               color: th.itemText,
                               opacity: txMatchesFilter(tx) ? 1 : 0.15,
-                              whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-                              display: "flex", alignItems: "center", gap: 3 }}>
-                            <span style={{ width: 14, flexShrink: 0, fontSize: 13, color: tx.recurrence !== "none" ? "#64748b" : "transparent", lineHeight: 1, textAlign: "center" }}>{tx.recurrence !== "none" ? "↻" : ""}</span>
-                            <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{tx.name}</span>
+                              minWidth: 0, overflow: "hidden", display: "flex", alignItems: "flex-start", gap: 3 }}>
+                            <span style={{ width: 14, flexShrink: 0, fontSize: 13, color: tx.recurrence !== "none" ? "#64748b" : "transparent", lineHeight: 1.3, textAlign: "center" }}>{tx.recurrence !== "none" ? "↻" : ""}</span>
+                            <span style={{ flex: "1 1 auto", minWidth: 36, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>{tx.name}</span>
                             {(tx as any).note && <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>}
+                            
                             {showTagPills && ((tx as any).tags || "").split(",").filter((s: string) => s.trim()).map((tag: string, ti: number) => (
-                              <span key={ti} style={{ fontSize: fontSize - 2, padding: "1px 4px", borderRadius: 4, background: tagColor(tag.trim()).bg, color: tagColor(tag.trim()).text, flexShrink: 0, whiteSpace: "nowrap", fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 2 }}><TagIconSvg tag={tag.trim()} size={fontSize - 3} />{tag.trim()}</span>
+                              <span key={ti} title={tag.trim()} style={{ color: tagColor(tag.trim()).text, flexShrink: 0, display: "inline-flex", alignItems: "center", marginTop: 2 }}><TagIconSvg tag={tag.trim()} size={fontSize - 2} /></span>
                             ))}
                             {(tx as any).autopay && <svg width="8" height="10" viewBox="0 0 8 10" style={{ marginLeft: "auto", flexShrink: 0, opacity: 0.6 }}><path d="M4.5 0L0 6h3.5L3 10l5-6H4.5z" fill="#f59e0b"/></svg>}
                             <span style={{ marginLeft: (tx as any).autopay ? 2 : "auto", flexShrink: 0, fontVariantNumeric: "tabular-nums", fontSize, fontWeight: 600, color: tx.type === "income" ? C.greenDark : C.redDark }}>{fmtShort(Math.abs(tx.amount)).replace("$", "")}</span>
@@ -2848,8 +2975,8 @@ export default function BudgetForecast() {
                       {DAY_NAMES[new Date(cY, cM, dd.day).getDay()].slice(0, 3)} {dd.day}
                     </span>
                     {dd.hasReset && <span style={{ fontSize: 8, fontWeight: 700, background: C.blueDark, color: "#fff", padding: "2px 5px", borderRadius: 4 }}>RST</span>}
-                    {!isOpen && dd.transactions.length > 0 && <span style={{ fontSize: 11, color: "#94a3b8" }}>{dd.transactions.length} item{dd.transactions.length > 1 ? "s" : ""}</span>}
-                    {dd.transactions.length === 0 && <span style={{ fontSize: 12, color: "#94a3b8" }}>—</span>}
+                    {!isOpen && visibleTx(dd.transactions).length > 0 && <span style={{ fontSize: 11, color: "#94a3b8" }}>{visibleTx(dd.transactions).length} item{visibleTx(dd.transactions).length > 1 ? "s" : ""}</span>}
+                    {visibleTx(dd.transactions).length === 0 && <span style={{ fontSize: 12, color: "#94a3b8" }}>—</span>}
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
                     {dd.balance < 0 && <span onClick={(e) => { e.stopPropagation(); setAdviceDay(dd.date); }} style={{ cursor: "pointer", flexShrink: 0, display: "inline-flex", alignItems: "center" }} title="Get advice"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z"/></svg></span>}
@@ -2859,7 +2986,7 @@ export default function BudgetForecast() {
                 </div>
                 {isOpen && (
                   <>
-                    {dd.transactions.map((tx, i) => (
+                    {visibleTx(dd.transactions).map((tx, i) => (
                       <div key={i} className="list-row" draggable onDragStart={(e) => onDragStart(e, tx, tx.occurrenceDate)}
                         onClick={() => openEdit(tx, tx.occurrenceDate)}
                         style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 18px 8px 36px", cursor: "pointer", borderRadius: 0,
@@ -2905,33 +3032,6 @@ export default function BudgetForecast() {
           <button onClick={() => setFontSize((s) => Math.min(18, s + 1))} className="bf-btn" style={{ width: 24, height: 24, borderRadius: 6, border: "none", background: "transparent", fontSize: 13, color: "#64748b", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700 }}>+</button>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          {Object.entries(THEMES).map(([key, t]) => (
-            <div key={key} onClick={() => { setTheme(key); localStorage.setItem("flowycash-theme", key); }} title={t.name}
-              style={{ width: 20, height: 20, borderRadius: "50%", background: t.swatch, cursor: "pointer",
-                border: theme === key ? "2px solid #1e293b" : "2px solid transparent",
-                boxShadow: theme === key ? "0 0 0 2px #fff, 0 0 0 4px #1e293b" : "none" }} />
-          ))}
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <a href="/api/export" download className="bf-btn"
-            style={{ padding: "4px 10px", borderRadius: 20, border: "1.5px solid #d1d5db", background: "#fff", color: "#64748b", fontSize: 10, fontWeight: 600, textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 4 }}>
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-            Backup
-          </a>
-          <label className="bf-btn"
-            style={{ padding: "4px 10px", borderRadius: 20, border: "1.5px solid #d1d5db", background: "#fff", color: "#64748b", fontSize: 10, fontWeight: 600, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4 }}>
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-            Restore
-            <input type="file" accept=".json" hidden onChange={async (e) => {
-              const file = e.target.files?.[0];
-              if (!file) return;
-              const text = await file.text();
-              if (!confirm("This will replace ALL current data. Continue?")) return;
-              await callApi("/api/import", { method: "POST", body: text });
-              await reload();
-              e.target.value = "";
-            }} />
-          </label>
           <button onClick={() => { setTutorialStep(0); }} className="bf-btn"
             style={{ padding: "4px 10px", borderRadius: 20, border: "1.5px solid #d1d5db", background: "#fff", color: "#64748b", fontSize: 10, fontWeight: 600 }}>
             ?
@@ -2942,199 +3042,118 @@ export default function BudgetForecast() {
               Demo
             </button>
           )}
+          <button onClick={() => setShowLabs(true)} className="bf-btn" title="Flowy Cash Labs"
+            style={{ padding: "4px 12px", borderRadius: 20, border: `1.5px solid ${th.accent}`, background: "#fff", color: th.headerBg, fontSize: 10, fontWeight: 700, display: "inline-flex", alignItems: "center", gap: 5, letterSpacing: "0.02em" }}>
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 3h6"/><path d="M10 3v6.5L4.6 18.5A2 2 0 0 0 6.3 21h11.4a2 2 0 0 0 1.7-2.5L14 9.5V3"/><path d="M7.5 15h9"/></svg>
+            Labs
+          </button>
         </div>
       </div>
 
-      {/* Weekly Planner Wizard */}
-      {showWeeklyPlanner && (() => {
-        const DAYS_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-        const steps = [
-          { title: "What does success look like?", subtitle: "Step 1 of 4 — Define Outcomes" },
-          { title: "When are you sharpest?", subtitle: "Step 2 of 4 — Map Energy" },
-          { title: "Assign to your week", subtitle: "Step 3 of 4 — Schedule" },
-          { title: "Your week at a glance", subtitle: "Step 4 of 4 — Review" },
-        ];
-        const step = steps[plannerStep];
-        return (
-          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", backdropFilter: "blur(8px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, animation: "panelIn 0.18s ease" }}
-            onClick={() => setShowWeeklyPlanner(false)}>
-            <div style={{ background: "#fff", borderRadius: 20, width: 600, maxWidth: "95vw", maxHeight: "90vh", overflow: "auto", boxShadow: "0 24px 80px rgba(0,0,0,0.2)" }}
-              onClick={(e) => e.stopPropagation()}>
-              {/* Header */}
-              <div style={{ background: th.headerBg, padding: "20px 24px", borderRadius: "20px 20px 0 0", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <div>
-                  <div style={{ fontSize: 11, color: th.headerText, opacity: 0.7 }}>{step.subtitle}</div>
-                  <div style={{ fontSize: 20, fontWeight: 800, color: "#fff" }}>{step.title}</div>
-                </div>
-                <button onClick={() => setShowWeeklyPlanner(false)} className="bf-btn" style={{ border: "none", background: "rgba(255,255,255,0.15)", color: "#fff", fontSize: 18, width: 28, height: 28, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
-              </div>
-              {/* Progress */}
-              <div style={{ height: 3, background: "#e2e8f0" }}>
-                <div style={{ height: "100%", background: th.accent, width: `${((plannerStep + 1) / 4) * 100}%`, transition: "width 0.3s" }} />
-              </div>
-
-              <div style={{ padding: "24px" }}>
-                {/* Step 1: Outcomes */}
-                {plannerStep === 0 && (
-                  <div>
-                    <p style={{ fontSize: 14, color: "#64748b", marginBottom: 16, lineHeight: 1.6 }}>
-                      Not feelings or intentions — <strong>concrete outcomes</strong>. What specific results would make this week successful?
-                    </p>
-                    <textarea value={plannerData.outcomes} onChange={(e) => setPlannerData({ ...plannerData, outcomes: e.target.value })}
-                      placeholder={"e.g.\n• Close the Henderson deal\n• Finish tax filing\n• Run 3 times\n• Pay off the Visa card\n• Ship the landing page"}
-                      className="bf-input" style={{ fontSize: 14, padding: "14px 16px", minHeight: 150, resize: "vertical" }} />
-                    <p style={{ fontSize: 11, color: "#94a3b8", marginTop: 8 }}>List 3–5 outcomes, one per line. Be specific — "exercise more" → "run 3x this week."</p>
+      {/* Flowy Cash Labs: backup, restore, and the experiments */}
+      {showLabs && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.35)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, animation: "panelIn 0.15s ease" }}
+          onClick={() => setShowLabs(false)}>
+          <div style={{ background: "#fff", borderRadius: 16, padding: "20px 22px", width: 380, maxWidth: "92vw", boxShadow: "0 20px 60px rgba(0,0,0,0.15)" }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+              <span style={{ fontSize: 15, fontWeight: 700, color: "#1e293b", display: "flex", alignItems: "center", gap: 8 }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={th.headerBg} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 3h6"/><path d="M10 3v6.5L4.6 18.5A2 2 0 0 0 6.3 21h11.4a2 2 0 0 0 1.7-2.5L14 9.5V3"/><path d="M7.5 15h9"/></svg>
+                Flowy Cash Labs
+              </span>
+              <button onClick={() => setShowLabs(false)} className="bf-btn" style={{ border: "none", background: "none", fontSize: 20, color: "#94a3b8", cursor: "pointer", padding: "0 4px" }}>×</button>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <button onClick={() => { setShowLabs(false); setShowPlaidDemo(true); }} className="bf-btn" style={{ textAlign: "left", display: "flex", flexDirection: "column", gap: 2, padding: "10px 12px", borderRadius: 10, border: `1.5px solid ${th.accent}`, background: th.totalBg, cursor: "pointer", fontFamily: "inherit" }}>
+                <span style={{ fontSize: 14, fontWeight: 600, color: "#1e293b" }}>Plaid demo</span>
+                <span style={{ fontSize: 12, color: "#64748b" }}>Preview the bank-linked Flowy Cash on sample data.</span>
+              </button>
+              <button onClick={async () => {
+                setShowLabs(false);
+                setCalFeed({ open: true, url: "", webcal: "", error: "", copied: false });
+                if (demo || !isSignedIn) { setCalFeed((c) => ({ ...c, error: "Sign in to get your personal calendar link." })); return; }
+                try {
+                  const r = await fetch("/api/calendar");
+                  const d = await r.json();
+                  if (!r.ok) throw new Error(d?.error || `HTTP ${r.status}`);
+                  setCalFeed((c) => ({ ...c, url: d.url, webcal: d.webcal }));
+                } catch (e) { setCalFeed((c) => ({ ...c, error: e instanceof Error ? e.message : String(e) })); }
+              }} className="bf-btn" style={{ textAlign: "left", display: "flex", flexDirection: "column", gap: 2, padding: "10px 12px", borderRadius: 10, border: "1.5px solid #e2e8f0", background: "#fff", cursor: "pointer", fontFamily: "inherit" }}>
+                <span style={{ fontSize: 14, fontWeight: 600, color: "#1e293b" }}>Calendar feed</span>
+                <span style={{ fontSize: 12, color: "#64748b" }}>Subscribe to your flagged items in Apple or Google Calendar.</span>
+              </button>
+              <button onClick={() => { setShowLabs(false); setDebtAmount(""); setDebtChunks([]); setDebtName("Debt Repayment"); setDebtStep(0); openPanel("debt-distribution"); }} className="bf-btn" style={{ textAlign: "left", display: "flex", flexDirection: "column", gap: 2, padding: "10px 12px", borderRadius: 10, border: "1.5px solid #e2e8f0", background: "#fff", cursor: "pointer", fontFamily: "inherit" }}>
+                <span style={{ fontSize: 14, fontWeight: 600, color: "#1e293b" }}>Distribute a debt</span>
+                <span style={{ fontSize: 12, color: "#64748b" }}>Spread a lump sum across the days that can absorb it.</span>
+              </button>
+              <a href="/api/export" download className="bf-btn" style={{ textDecoration: "none", display: "flex", flexDirection: "column", gap: 2, padding: "10px 12px", borderRadius: 10, border: "1.5px solid #e2e8f0", background: "#fff", cursor: "pointer" }}>
+                <span style={{ fontSize: 14, fontWeight: 600, color: "#1e293b" }}>Backup</span>
+                <span style={{ fontSize: 12, color: "#64748b" }}>Download everything as one JSON file.</span>
+              </a>
+            </div>
+            <div style={{ marginTop: 14, border: "1.5px solid #fecaca", background: "#fff7f7", borderRadius: 12, padding: "12px 14px", display: "flex", flexDirection: "column", gap: 8 }}>
+              <div style={{ fontSize: 11, fontWeight: 800, color: C.redDark, textTransform: "uppercase", letterSpacing: "0.08em" }}>Danger zone</div>
+              <div style={{ fontSize: 14, fontWeight: 600, color: "#1e293b" }}>Restore from backup</div>
+              <div style={{ fontSize: 12, color: "#7f1d1d", lineHeight: 1.5 }}>Replaces every item, reset, and note in your account with the contents of the file. There is no undo. Download a Backup first.</div>
+              <label className="bf-btn" style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "8px 12px", borderRadius: 8, border: "1.5px solid #fca5a5", background: "#fff", cursor: "pointer", fontSize: 13, fontWeight: 600, color: "#991b1b", alignSelf: "flex-start" }}>
+                {restoreFile ? `Chosen: ${restoreFile.name}` : "Choose backup file…"}
+                <input type="file" accept=".json" hidden onChange={(e) => { setRestoreFile(e.target.files?.[0] || null); setRestoreConfirm(""); e.target.value = ""; }} />
+              </label>
+              {restoreFile && (
+                <>
+                  <div style={{ fontSize: 12, color: "#7f1d1d" }}>Type <strong>REPLACE</strong> to confirm.</div>
+                  <input value={restoreConfirm} onChange={(e) => setRestoreConfirm(e.target.value)} placeholder="REPLACE" className="bf-input" style={{ borderColor: "#fca5a5", fontSize: 14, padding: "8px 12px", letterSpacing: "0.08em" }} />
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button disabled={restoreConfirm !== "REPLACE"} onClick={async () => {
+                      if (!restoreFile || restoreConfirm !== "REPLACE") return;
+                      const text = await restoreFile.text();
+                      await callApi("/api/import", { method: "POST", body: text });
+                      await reload();
+                      setRestoreFile(null); setRestoreConfirm(""); setShowLabs(false);
+                      setShareMsg("Restored from backup"); setTimeout(() => setShareMsg(""), 3000);
+                    }} className="bf-btn" style={{ border: "none", borderRadius: 8, padding: "9px 16px", background: restoreConfirm === "REPLACE" ? C.redDark : "#fca5a5", color: "#fff", fontSize: 13, fontWeight: 700, cursor: restoreConfirm === "REPLACE" ? "pointer" : "not-allowed" }}>Replace my data</button>
+                    <button onClick={() => { setRestoreFile(null); setRestoreConfirm(""); }} className="bf-btn" style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "9px 14px", background: "#fff", color: "#64748b", fontSize: 13, fontWeight: 600 }}>Cancel</button>
                   </div>
-                )}
-
-                {/* Step 2: Energy */}
-                {plannerStep === 1 && (
-                  <div>
-                    <p style={{ fontSize: 14, color: "#64748b", marginBottom: 16, lineHeight: 1.6 }}>
-                      When during the day do you think most clearly? When do you usually lose focus?
-                    </p>
-                    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                      <div>
-                        <label style={{ fontSize: 12, fontWeight: 600, color: C.greenDark, display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
-                          <span style={{ width: 10, height: 10, borderRadius: "50%", background: C.greenDark }} /> High-focus time
-                        </label>
-                        <input value={plannerData.energyMap.high} onChange={(e) => setPlannerData({ ...plannerData, energyMap: { ...plannerData.energyMap, high: e.target.value } })}
-                          placeholder="e.g. 6am–10am" className="bf-input" style={{ fontSize: 14, padding: "10px 14px" }} />
-                      </div>
-                      <div>
-                        <label style={{ fontSize: 12, fontWeight: 600, color: "#d97706", display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
-                          <span style={{ width: 10, height: 10, borderRadius: "50%", background: "#d97706" }} /> Medium-focus time
-                        </label>
-                        <input value={plannerData.energyMap.medium} onChange={(e) => setPlannerData({ ...plannerData, energyMap: { ...plannerData.energyMap, medium: e.target.value } })}
-                          placeholder="e.g. 10am–2pm" className="bf-input" style={{ fontSize: 14, padding: "10px 14px" }} />
-                      </div>
-                      <div>
-                        <label style={{ fontSize: 12, fontWeight: 600, color: "#94a3b8", display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
-                          <span style={{ width: 10, height: 10, borderRadius: "50%", background: "#94a3b8" }} /> Recovery / Admin time
-                        </label>
-                        <input value={plannerData.energyMap.recovery} onChange={(e) => setPlannerData({ ...plannerData, energyMap: { ...plannerData.energyMap, recovery: e.target.value } })}
-                          placeholder="e.g. 2pm–5pm" className="bf-input" style={{ fontSize: 14, padding: "10px 14px" }} />
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Step 3: Assign to buckets */}
-                {plannerStep === 2 && (() => {
-                  const outcomes = plannerData.outcomes.split("\n").map((s) => s.replace(/^[•\-*]\s*/, "").trim()).filter(Boolean);
-                  return (
-                    <div>
-                      <p style={{ fontSize: 14, color: "#64748b", marginBottom: 16, lineHeight: 1.6 }}>
-                        Drag or assign each outcome to a day. Put important work on high-focus days.
-                      </p>
-                      {/* Unassigned outcomes */}
-                      <div style={{ marginBottom: 16 }}>
-                        <div style={{ fontSize: 11, fontWeight: 600, color: "#94a3b8", textTransform: "uppercase", marginBottom: 8 }}>Outcomes to assign</div>
-                        {outcomes.map((o, i) => {
-                          const assigned = Object.values(plannerData.buckets).flat().includes(o);
-                          return (
-                            <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 12px", marginBottom: 4, borderRadius: 8, background: assigned ? "#f0fdf4" : "#f8fafc", border: "1px solid #e2e8f0", opacity: assigned ? 0.5 : 1 }}>
-                              <span style={{ fontSize: 13, color: "#1e293b", fontWeight: 600 }}>{o}</span>
-                              {!assigned && (
-                                <select onChange={(e) => {
-                                  const day = e.target.value as keyof typeof plannerData.buckets;
-                                  if (day) setPlannerData({ ...plannerData, buckets: { ...plannerData.buckets, [day]: [...plannerData.buckets[day], o] } });
-                                  e.target.value = "";
-                                }} style={{ fontSize: 11, padding: "4px 8px", borderRadius: 6, border: "1px solid #e2e8f0", color: "#64748b" }}>
-                                  <option value="">Assign →</option>
-                                  {DAYS_LABELS.map((d, di) => <option key={d} value={["mon", "tue", "wed", "thu", "fri", "sat"][di]}>{d}</option>)}
-                                </select>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                      {/* Day buckets */}
-                      <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 6 }}>
-                        {DAYS_LABELS.map((d, di) => {
-                          const dayKey = ["mon", "tue", "wed", "thu", "fri", "sat"][di] as keyof typeof plannerData.buckets;
-                          return (
-                            <div key={d} style={{ padding: "10px 8px", borderRadius: 10, background: "#f8fafc", border: "1px solid #e2e8f0", minHeight: 80 }}>
-                              <div style={{ fontSize: 11, fontWeight: 700, color: th.headerBg, marginBottom: 6, textAlign: "center" }}>{d}</div>
-                              {plannerData.buckets[dayKey].map((item, j) => (
-                                <div key={j} style={{ fontSize: 10, padding: "3px 6px", marginBottom: 3, borderRadius: 4, background: "#fff", border: "1px solid #e2e8f0", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item}</span>
-                                  <span onClick={() => setPlannerData({ ...plannerData, buckets: { ...plannerData.buckets, [dayKey]: plannerData.buckets[dayKey].filter((_, k) => k !== j) } })} style={{ cursor: "pointer", color: "#94a3b8", fontSize: 12 }}>×</span>
-                                </div>
-                              ))}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  );
-                })()}
-
-                {/* Step 4: Review */}
-                {plannerStep === 3 && (() => {
-                  const outcomes = plannerData.outcomes.split("\n").map((s) => s.replace(/^[•\-*]\s*/, "").trim()).filter(Boolean);
-                  const unassigned = outcomes.filter((o) => !Object.values(plannerData.buckets).flat().includes(o));
-                  return (
-                    <div>
-                      <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 8, marginBottom: 20 }}>
-                        {DAYS_LABELS.map((d, di) => {
-                          const dayKey = ["mon", "tue", "wed", "thu", "fri", "sat"][di] as keyof typeof plannerData.buckets;
-                          const items = plannerData.buckets[dayKey];
-                          return (
-                            <div key={d} style={{ padding: "12px 10px", borderRadius: 12, background: items.length ? "#f0fdf4" : "#f8fafc", border: `1.5px solid ${items.length ? C.green : "#e2e8f0"}` }}>
-                              <div style={{ fontSize: 12, fontWeight: 700, color: th.headerBg, marginBottom: 8, textAlign: "center" }}>{d}</div>
-                              {items.map((item, j) => (
-                                <div key={j} style={{ fontSize: 11, padding: "4px 8px", marginBottom: 4, borderRadius: 6, background: "#fff", border: "1px solid #d1fae5", fontWeight: 600, color: "#1e293b" }}>
-                                  {item}
-                                  <div style={{ fontSize: 9, color: "#94a3b8", marginTop: 2 }}>Done = ✓ completed</div>
-                                </div>
-                              ))}
-                              {items.length === 0 && <div style={{ fontSize: 10, color: "#94a3b8", textAlign: "center" }}>—</div>}
-                            </div>
-                          );
-                        })}
-                      </div>
-                      {unassigned.length > 0 && (
-                        <div style={{ padding: "12px 16px", borderRadius: 10, background: "#fff5f5", border: "1px solid #fecaca", marginBottom: 16 }}>
-                          <div style={{ fontSize: 11, fontWeight: 600, color: C.redDark, marginBottom: 4 }}>⚠️ Unassigned — might not fit this week</div>
-                          {unassigned.map((o, i) => <div key={i} style={{ fontSize: 12, color: "#991b1b", padding: "2px 0" }}>• {o}</div>)}
-                        </div>
-                      )}
-                      <div style={{ padding: "12px 16px", borderRadius: 10, background: "#f8fafc", border: "1px solid #e2e8f0" }}>
-                        <div style={{ fontSize: 11, fontWeight: 600, color: "#64748b", marginBottom: 4 }}>⚡ Energy blocks</div>
-                        <div style={{ fontSize: 12, color: "#1e293b" }}>
-                          <span style={{ color: C.greenDark }}>●</span> High focus: {plannerData.energyMap.high || "—"} &nbsp;
-                          <span style={{ color: "#d97706" }}>●</span> Medium: {plannerData.energyMap.medium || "—"} &nbsp;
-                          <span style={{ color: "#94a3b8" }}>●</span> Recovery: {plannerData.energyMap.recovery || "—"}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })()}
-
-                {/* Nav buttons */}
-                <div style={{ display: "flex", justifyContent: "space-between", marginTop: 20 }}>
-                  <button onClick={() => plannerStep > 0 ? setPlannerStep(plannerStep - 1) : setShowWeeklyPlanner(false)} className="bf-btn"
-                    style={{ padding: "10px 20px", borderRadius: 10, border: "1px solid #e2e8f0", background: "#fff", color: "#64748b", fontSize: 13, fontWeight: 600 }}>
-                    {plannerStep === 0 ? "Cancel" : "Back"}
-                  </button>
-                  <button onClick={() => {
-                    if (plannerStep === 0) {
-                      const parsed = plannerData.outcomes.split("\n").map((s) => s.replace(/^[•\-*]\s*/, "").trim()).filter(Boolean);
-                      setPlannerData({ ...plannerData, parsedOutcomes: parsed });
-                    }
-                    if (plannerStep < 3) setPlannerStep(plannerStep + 1);
-                    else setShowWeeklyPlanner(false);
-                  }} className="bf-btn"
-                    style={{ padding: "10px 28px", borderRadius: 10, border: "none", background: th.headerBg, color: "#fff", fontSize: 13, fontWeight: 600 }}>
-                    {plannerStep === 3 ? "Done" : "Next →"}
-                  </button>
-                </div>
-              </div>
+                </>
+              )}
             </div>
           </div>
-        );
-      })()}
+        </div>
+      )}
+
+      {showPlaidDemo && <PlaidDemo onClose={() => setShowPlaidDemo(false)} />}
+
+      {/* Calendar feed */}
+      {calFeed.open && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.35)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, animation: "panelIn 0.15s ease" }}
+          onClick={() => setCalFeed((c) => ({ ...c, open: false }))}>
+          <div style={{ background: "#fff", borderRadius: 16, padding: "20px 22px", width: 440, maxWidth: "92vw", boxShadow: "0 20px 60px rgba(0,0,0,0.15)" }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+              <span style={{ fontSize: 15, fontWeight: 700, color: "#1e293b" }}>Calendar feed</span>
+              <button onClick={() => setCalFeed((c) => ({ ...c, open: false }))} className="bf-btn" style={{ border: "none", background: "none", fontSize: 20, color: "#94a3b8", cursor: "pointer", padding: "0 4px" }}>×</button>
+            </div>
+            <p style={{ fontSize: 13, color: "#475569", lineHeight: 1.5, margin: "0 0 12px" }}>
+              Every payment with the <strong>Reminder</strong> toggle on shows up in your calendar with an alert at 9 AM on the day. Subscribe once; it updates itself.
+            </p>
+            {calFeed.error && <div style={{ fontSize: 13, color: C.redDark, marginBottom: 8 }}>{calFeed.error}</div>}
+            {calFeed.webcal && (
+              <>
+                <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
+                  <input readOnly value={calFeed.webcal} onFocus={(e) => e.currentTarget.select()} className="bf-input" style={{ fontSize: 12, padding: "8px 10px" }} />
+                  <button onClick={async () => { try { await navigator.clipboard.writeText(calFeed.webcal); setCalFeed((c) => ({ ...c, copied: true })); } catch { /* ignore */ } }} className="bf-btn"
+                    style={{ border: "none", borderRadius: 8, padding: "0 14px", background: th.accent, color: "#fff", fontSize: 12, fontWeight: 700, whiteSpace: "nowrap" }}>{calFeed.copied ? "Copied" : "Copy"}</button>
+                </div>
+                <a href={calFeed.webcal} className="bf-btn" style={{ display: "inline-block", marginBottom: 12, padding: "8px 14px", borderRadius: 8, border: `1.5px solid ${th.accent}`, color: th.accent, fontSize: 12, fontWeight: 700, textDecoration: "none" }}>Open in Calendar</a>
+                <div style={{ fontSize: 12, color: "#64748b", lineHeight: 1.6 }}>
+                  <div><strong>iPhone:</strong> tap Open in Calendar, or Settings → Calendar → Accounts → Add Subscribed Calendar and paste the link.</div>
+                  <div><strong>Mac:</strong> Calendar → File → New Calendar Subscription, paste the link.</div>
+                  <div><strong>Google Calendar:</strong> Other calendars → From URL, paste the link (use https instead of webcal).</div>
+                </div>
+              </>
+            )}
+            {!calFeed.webcal && !calFeed.error && <div style={{ fontSize: 13, color: "#94a3b8" }}>Loading…</div>}
+          </div>
+        </div>
+      )}
 
       {/* Share Modal */}
       {showShare && (
@@ -3196,13 +3215,12 @@ export default function BudgetForecast() {
           { title: "Welcome to flowycash", text: "Your personal cashflow calendar. See every dollar in and out, day by day.", icon: "👋", target: "[data-tour='logo']", pos: "bottom" },
           { title: "Navigate Months", text: "Use ‹ › to switch months. Click the month name to add notes for that month.", icon: "📅", target: "[data-tour='month']", pos: "bottom" },
           { title: "Tags & Categories", text: "Toggle tags to see spending by category. Hover a tag pill for the breakdown.", icon: "🏷️", target: "[data-tour='tags']", pos: "bottom", enter: () => setShowTagPills(true), exit: () => setShowTagPills(false) },
-          { title: "Chart View", text: "Your balance trend across the month. Green = positive, red = negative.", icon: "📈", target: "[data-tour='chart']", pos: "bottom", enter: () => setShowChart(true), exit: () => setShowChart(false) },
-          { title: "Dashboard", text: "Full monthly overview: metrics, risks, top expenses, and category breakdown.", icon: "📊", target: "[data-tour='dashboard']", pos: "bottom", enter: () => setShowDashboard(true), exit: () => setShowDashboard(false) },
+          { title: "Dashboard", text: "Reports: forecast chart, metrics, risks, top expenses, and category breakdown.", icon: "📊", target: "[data-tour='dashboard']", pos: "bottom", enter: () => setShowDashboard(true), exit: () => setShowDashboard(false) },
           { title: "Click a Day", text: "Click any day number for a detailed view. Click empty space in a cell to add a transaction.", icon: "🔍", target: "[data-tour='calendar']", pos: "top" },
           { title: "Daily Balance", text: "The bar at the bottom of each day shows its running balance. Click it to set a balance reset.", icon: "💰", target: "[data-tour='calendar']", pos: "top" },
           { title: "Drag to Move", text: "Drag any transaction to a different day. For recurring items, choose 'just this one' or 'all future'.", icon: "✋", target: "[data-tour='calendar']", pos: "top" },
           { title: "Negative Day Advice", text: "The 💡 lightbulb appears on negative days. Click for strategies to stay above zero.", icon: "💡", target: "[data-tour='calendar']", pos: "top" },
-          { title: "Backup & Restore", text: "Download your data anytime. Restore from a backup. Theme swatches and font size are here too.", icon: "💾", target: "[data-tour='footer']", pos: "top" },
+          { title: "Backup & Restore", text: "Download your data anytime. Restore from a backup. Text size is here. Backup and Restore live under Labs, with the debt tool, calendar feed, and the Plaid demo. The palette is in the top bar.", icon: "💾", target: "[data-tour='footer']", pos: "top" },
           { title: "You're Ready!", text: "Explore your month. Click transactions to edit. Drag to reschedule. You got this.", icon: "🚀", target: "[data-tour='logo']", pos: "bottom" },
         ];
         const step = steps[tutorialStep];
@@ -3233,7 +3251,7 @@ export default function BudgetForecast() {
         return (<>
           {/* Dark overlay with spotlight hole */}
           <div style={{ position: "fixed", inset: 0, zIndex: 99 }}
-            onClick={() => { step.exit?.(); setTutorialStep(-1); localStorage.setItem("flowycash-tutorial-done", "1"); setShowTagPills(false); setShowChart(false); setShowDashboard(false); }} />
+            onClick={() => { step.exit?.(); setTutorialStep(-1); localStorage.setItem("flowycash-tutorial-done", "1"); setShowTagPills(false); setShowDashboard(false); }} />
           {rect && <div style={spotStyle} />}
           {/* Tooltip card */}
           <div style={{ ...cardStyle, background: "#fff", borderRadius: 16, width: 360, maxWidth: "90vw", boxShadow: "0 12px 40px rgba(0,0,0,0.2)", overflow: "hidden" }}>
@@ -3254,7 +3272,7 @@ export default function BudgetForecast() {
                   ))}
                 </div>
                 <div style={{ display: "flex", gap: 6 }}>
-                  <button onClick={() => { step.exit?.(); setTutorialStep(-1); localStorage.setItem("flowycash-tutorial-done", "1"); setShowTagPills(false); setShowChart(false); setShowDashboard(false); }}
+                  <button onClick={() => { step.exit?.(); setTutorialStep(-1); localStorage.setItem("flowycash-tutorial-done", "1"); setShowTagPills(false); setShowDashboard(false); }}
                     style={{ border: "none", background: "none", color: "#94a3b8", fontSize: 11, cursor: "pointer" }}>Skip</button>
                   {tutorialStep > 0 && (
                     <button onClick={() => { step.exit?.(); const prev = steps[tutorialStep - 1]; prev.enter?.(); setTutorialStep((s) => s - 1); }} className="bf-btn"
@@ -3274,6 +3292,14 @@ export default function BudgetForecast() {
           </div>
         </>);
       })()}
+
+      {/* Floating Ask button for phones, where the header icons do not fit */}
+      {!askOpen && (
+        <button onClick={() => setAskOpen(true)} className="bf-btn ask-fab" title="Ask or tell Flowy"
+          style={{ position: "fixed", right: 18, bottom: 64, zIndex: 60, width: 52, height: 52, borderRadius: "50%", border: "none", background: th.accent, color: "#fff", alignItems: "center", justifyContent: "center", boxShadow: "0 8px 24px rgba(0,0,0,0.25)" }}>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        </button>
+      )}
 
       {/* Voice feedback */}
       {(listening || voiceResult) && (

@@ -58,6 +58,8 @@ npm run dev           # Next.js dev server on port 3000
 | `CLERK_SECRET_KEY` | Yes | Clerk secret key (`sk_live_...`) |
 | `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | Yes | Stripe publishable key |
 | `STRIPE_SECRET_KEY` | Yes | Stripe secret key |
+| `CRON_SECRET` | Recommended | Bearer token Vercel Cron sends to the notify/push routes. Also signs the per-user calendar feed URL (falls back to CLERK_SECRET_KEY when unset) |
+| `ANTHROPIC_API_KEY` | Yes | Anthropic API key. Used by `/api/reconcile/image` (statement photos) and `/api/assistant` (natural-language questions and edits) |
 
 ### Production Gotchas
 
@@ -139,6 +141,11 @@ After any deploy that changes env vars or database schema:
 | `/api/share` | GET, POST, DELETE | Manage shared access by email |
 | `/api/export` | GET | Export all data as JSON backup |
 | `/api/import` | POST | Restore from JSON backup |
+| `/api/calendar` | GET | Signed-in user's personal calendar feed URL |
+| `/api/calendar.ics` | GET | Subscribable iCalendar feed of items with the Reminder toggle on, 30 days back to 180 ahead, 9 AM alarm. Auth by `u` (user id) + `t` (HMAC of it with CRON_SECRET) |
+| `/api/notify/check` | GET, POST | Daily cron: one email per user with flagged reminders due today/tomorrow, large payments, dips, overdue items. `?userId=` limits to one user, `?force=1` sends even with no findings |
+| `/api/notify/weekly` | GET | Monday dashboard email (still single-user via NOTIFY_USER_ID / NOTIFY_TO_EMAIL) |
+| `/api/assistant` | POST | Natural-language question or change request. Takes the client state plus the viewed month, returns a short reply and a list of proposed actions the client confirms before applying |
 | `/api/stripe/checkout` | POST | Create Stripe checkout session |
 | `/api/stripe/status` | GET | Check subscription status (includes admin bypass) |
 | `/api/stripe/portal` | POST | Create Stripe billing portal session |

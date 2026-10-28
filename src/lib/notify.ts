@@ -57,17 +57,19 @@ function getOccurrences(startDate: string, recurrence: string, rStart: string, r
   return dates;
 }
 
-interface Occ {
+export interface Occ {
+  transactionId: string;
   name: string;
   date: string; // display date (post-override)
   occurrenceDate: string;
   amount: number; // absolute
   type: string;
   autopay: boolean;
+  reminder: boolean;
 }
 
 // Net signed amount bucketed by display date, applying the override layer.
-function bucketByDate(state: AppState, rStart: string, rEnd: string): Record<string, number> {
+export function bucketByDate(state: AppState, rStart: string, rEnd: string): Record<string, number> {
   const buckets: Record<string, number> = {};
   (state.transactions || []).forEach((tx: Transaction) => {
     getOccurrences(tx.startDate, tx.recurrence, rStart, rEnd, tx.endDate).forEach((odk) => {
@@ -83,19 +85,21 @@ function bucketByDate(state: AppState, rStart: string, rEnd: string): Record<str
   return buckets;
 }
 
-function expandOccurrences(state: AppState, rStart: string, rEnd: string): Occ[] {
+export function expandOccurrences(state: AppState, rStart: string, rEnd: string): Occ[] {
   const out: Occ[] = [];
   (state.transactions || []).forEach((tx: Transaction) => {
     getOccurrences(tx.startDate, tx.recurrence, rStart, rEnd, tx.endDate).forEach((odk) => {
       const ov = state.overrides[`${tx.id}::${odk}`] as OverrideData | undefined;
       if (ov?.deleted) return;
       out.push({
+        transactionId: tx.id,
         name: ov?.name ?? tx.name,
         date: ov?.movedTo || odk,
         occurrenceDate: odk,
         amount: Math.abs(ov?.amount ?? tx.amount),
         type: ov?.type ?? tx.type,
         autopay: !!tx.autopay,
+        reminder: !!tx.reminder,
       });
     });
   });
@@ -119,6 +123,7 @@ function forecastBalanceAt(state: AppState, fromDate: string, fromBal: number, t
 
 export interface DriftReport {
   today: string;
+  reminders: { name: string; date: string; amount: number; type: string }[];
   upcomingLarge: { name: string; date: string; amount: number }[];
   overdue: { name: string; date: string; amount: number; type: string }[];
   negativeDays: { date: string; balance: number }[];
@@ -190,6 +195,12 @@ export function buildDriftReport(state: AppState, opts?: ReportOpts): DriftRepor
   const leadDays = opts?.leadDays ?? 3;
   const resets = state.balanceResets || {};
 
+  // --- Flagged reminders due today or tomorrow ---
+  const reminders = expandOccurrences(state, addDays(today, -1), addDays(today, 2))
+    .filter((o) => o.reminder && (o.date === today || o.date === addDays(today, 1)))
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .map((o) => ({ name: o.name, date: o.date, amount: o.amount, type: o.type }));
+
   // --- Large payments coming due within the lead window ---
   const leadEnd = addDays(today, leadDays);
   const upcomingLarge = expandOccurrences(state, addDays(today, -3), addDays(leadEnd, 3))
@@ -251,8 +262,8 @@ export function buildDriftReport(state: AppState, opts?: ReportOpts): DriftRepor
     dip = { date: worst.date, deficit: Math.round(Math.abs(worst.balance)), tips: dipTips(state, worst.date, worst.balance) };
   }
 
-  const hasFindings = upcomingLarge.length > 0 || overdue.length > 0 || negativeDays.length > 0 || resetDivergence != null;
-  return { today, upcomingLarge, overdue, negativeDays, dip, resetDivergence, hasFindings };
+  const hasFindings = reminders.length > 0 || upcomingLarge.length > 0 || overdue.length > 0 || negativeDays.length > 0 || resetDivergence != null;
+  return { today, reminders, upcomingLarge, overdue, negativeDays, dip, resetDivergence, hasFindings };
 }
 
 export interface RenderedEmail {
@@ -264,9 +275,23 @@ export interface RenderedEmail {
 // Turn a drift report into email content. Kept separate from sending so it can
 // be previewed or unit-tested without a Resend key.
 export function renderEmail(report: DriftReport): RenderedEmail {
-  const subject = "Flowy Cash: heads up";
+  const dueToday = report.reminders.filter((r) => r.date === report.today);
+  const subject = dueToday.length === 1
+    ? `Flowy Cash: ${dueToday[0].name} ${dueToday[0].type === "income" ? "arrives" : "due"} today`
+    : dueToday.length > 1
+      ? `Flowy Cash: ${dueToday.length} reminders today`
+      : "Flowy Cash: heads up";
   const textLines: string[] = ["Here's what stood out in your forecast:", ""];
   const htmlSections: string[] = [];
+
+  if (report.reminders.length) {
+    const when = (d: string) => (d === report.today ? "today" : "tomorrow");
+    textLines.push(`• Reminder${report.reminders.length === 1 ? "" : "s"}: ` +
+      report.reminders.map((r) => `${r.name} ${fmt(r.amount)} ${r.type === "income" ? "arrives" : "due"} ${when(r.date)}`).join("; ") + ".");
+    const items = report.reminders.map((r) => `<li>${escapeHtml(r.name)} — <strong>${fmt(r.amount)}</strong> ${r.type === "income" ? "arrives" : "due"} <strong>${when(r.date)}</strong> (${friendlyDate(r.date)})</li>`).join("");
+    htmlSections.push(row("#10b981", `Reminder${report.reminders.length === 1 ? "" : "s"}`,
+      `You asked to be reminded about ${report.reminders.length === 1 ? "this" : "these"}:<ul style="margin:8px 0 0;padding-left:18px;color:#334155;">${items}</ul>`));
+  }
 
   if (report.upcomingLarge.length) {
     const total = report.upcomingLarge.reduce((s, p) => s + p.amount, 0);
