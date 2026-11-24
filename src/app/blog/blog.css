@@ -1,0 +1,43 @@
+.fc-blog { --green:#065f46; --green2:#047857; --mint:#ecfdf5; --mintb:#a7f3d0; --ink:#0f172a; --mute:#64748b; font-family: var(--font-inter), Inter, system-ui, sans-serif; color: var(--ink); background: #fbfaf7; min-height: 100vh; }
+.fc-blog .wrap { max-width: 760px; margin: 0 auto; padding: 36px 20px 80px; }
+.fc-blog .top { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 36px; }
+.fc-blog .brand { font-weight: 800; letter-spacing: -0.02em; color: var(--green); text-decoration: none; font-size: 18px; }
+.fc-blog .nav a { color: var(--mute); text-decoration: none; font-size: 14px; font-weight: 600; margin-left: 16px; }
+.fc-blog .nav a:hover { color: var(--green); }
+.fc-blog .kicker { display: inline-block; font-size: 11px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; color: var(--green2); background: var(--mint); border: 1px solid var(--mintb); border-radius: 999px; padding: 4px 10px; }
+.fc-blog h1 { font-size: 40px; line-height: 1.08; letter-spacing: -0.025em; margin: 12px 0 10px; }
+.fc-blog .lede { font-size: 18px; color: #334155; line-height: 1.5; margin: 0 0 8px; }
+.fc-blog .meta { font-size: 13px; color: var(--mute); margin-bottom: 28px; }
+.fc-blog article { font-size: 17px; line-height: 1.65; }
+.fc-blog article h2 { font-size: 24px; letter-spacing: -0.015em; margin: 34px 0 10px; }
+.fc-blog article h3 { font-size: 18px; margin: 26px 0 8px; }
+.fc-blog article p { margin: 0 0 16px; }
+.fc-blog article ol, .fc-blog article ul { padding-left: 22px; margin: 0 0 16px; }
+.fc-blog article li { margin: 4px 0; }
+.fc-blog article blockquote { margin: 18px 0; padding: 10px 16px; border-left: 4px solid var(--green); background: #fff; border-radius: 0 12px 12px 0; }
+.fc-blog article a { color: var(--green2); font-weight: 600; }
+.fc-blog .fill { background: var(--mint); border-bottom: 2px solid var(--mintb); padding: 0 4px; border-radius: 4px; font-weight: 700; }
+.fc-blog .fillnote { font-size: 13px; color: var(--mute); background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 10px 14px; margin: 0 0 22px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.fc-blog .fillnote a { color: #fff; background: var(--green); text-decoration: none; font-weight: 700; padding: 6px 12px; border-radius: 999px; font-size: 13px; }
+.fc-blog .cards { display: grid; gap: 14px; }
+.fc-blog .card { display: block; background: #fff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 18px 20px; text-decoration: none; color: inherit; }
+.fc-blog .card:hover { border-color: var(--mintb); box-shadow: 0 8px 24px rgba(6,95,70,.08); }
+.fc-blog .card .t { font-size: 20px; font-weight: 800; letter-spacing: -0.015em; margin: 6px 0 6px; }
+.fc-blog .card .x { font-size: 14.5px; color: #475569; line-height: 1.5; }
+.fc-blog .card .m { font-size: 12px; color: var(--mute); margin-top: 8px; }
+.fc-blog .practices { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin: 20px 0 30px; }
+.fc-blog .pr { background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 14px 16px; }
+.fc-blog .pr .n { font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--green2); }
+.fc-blog .pr .l { font-size: 16px; font-weight: 800; margin-top: 2px; letter-spacing: -0.01em; }
+.fc-blog .pr .d { font-size: 13px; color: #475569; margin-top: 4px; line-height: 1.45; }
+.fc-blog .pr a { font-size: 12.5px; color: var(--green2); font-weight: 700; text-decoration: none; display: inline-block; margin-top: 8px; }
+.fc-blog .next { margin-top: 44px; padding-top: 22px; border-top: 1px solid #e2e8f0; }
+.fc-blog .next .h { font-size: 12px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--mute); margin-bottom: 10px; }
+.fc-blog .cta { margin-top: 40px; background: var(--green); color: #fff; border-radius: 18px; padding: 22px 24px; }
+.fc-blog .cta .h { font-size: 20px; font-weight: 800; letter-spacing: -0.015em; margin-bottom: 6px; }
+.fc-blog .cta p { color: #d1fae5; margin: 0 0 12px; font-size: 15px; }
+.fc-blog .cta a { display: inline-block; background: #fff; color: var(--green); text-decoration: none; font-weight: 800; padding: 10px 16px; border-radius: 12px; font-size: 14px; }
+.fc-blog .quote { background: #fff; border-left: 4px solid var(--green); border-radius: 0 12px 12px 0; padding: 12px 16px; margin: 20px 0; }
+.fc-blog .quote .q { font-size: 17px; line-height: 1.45; font-style: italic; }
+.fc-blog .quote .a { font-size: 12.5px; color: var(--mute); margin-top: 6px; }
+@media (max-width: 600px) { .fc-blog h1 { font-size: 30px; } .fc-blog article { font-size: 16px; } }

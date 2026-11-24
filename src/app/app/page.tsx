@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { UserButton, useAuth } from "@clerk/nextjs";
 import { ensurePushSubscription } from "@/lib/push-client";
 import type { Transaction, OverrideData, AppState } from "@/lib/types";
@@ -9,6 +9,8 @@ import type { AssistantAction } from "@/app/api/assistant/route";
 import PlaidDemo from "./PlaidDemo";
 import CatchUp from "./CatchUp";
 import BankLink, { type PlaidItemInfo } from "./BankLink";
+import { situation as encSituation, pickEncouragement, dismiss as dismissEncouragement } from "@/lib/encourage";
+import { quoteForDay } from "@/content/quotes";
 import { lastResetDate as catchupLastReset, todayKey as catchupToday, daysBetween as catchupDaysBetween } from "@/lib/catchup";
 import { distributeDebt, simulateDistribution, type DebtPlacement } from "@/lib/debt-distribution";
 
@@ -379,6 +381,12 @@ export default function BudgetForecast() {
     try { const r = await api("/api/plaid/item"); setPlaidItems(Array.isArray(r.items) ? (r.items as PlaidItemInfo[]) : []); } catch { setPlaidItems([]); }
   }, [demo, isSignedIn]);
   useEffect(() => { refreshPlaid(); }, [refreshPlaid]);
+  // The one-line encouragement and the daily quote. Both derive from the same
+  // read of the next 45 days; dismissing a line re-picks.
+  const [encTick, setEncTick] = useState(0);
+  const encSit = useMemo(() => (loaded && state.transactions?.length ? encSituation(state, plaidItems.length > 0) : null), [loaded, state, plaidItems]);
+  const encouragement = useMemo(() => (encSit ? pickEncouragement(encSit, state) : null), [encSit, state, encTick]); // eslint-disable-line react-hooks/exhaustive-deps
+  const dayQuote = useMemo(() => quoteForDay(encSit?.lowest && encSit.lowest.bal < 0 ? "tight" : "fine", catchupToday()), [encSit]);
   const [catchUpDismissed, setCatchUpDismissed] = useState(() => typeof window !== "undefined" && localStorage.getItem("flowycash-catchup-dismissed") === catchupToday());
   // The last time the calendar had a real balance: the newest balance reset,
   // or failing that the last day the app was opened on this device.
@@ -1647,6 +1655,22 @@ export default function BudgetForecast() {
         );
       })()}
 
+      {/* One line from the method, once per situation */}
+      {encouragement && !showCatchUp && (() => {
+        const since = catchupLastReset(state) || prevSeen;
+        const gap = since ? catchupDaysBetween(since, catchupToday()) : null;
+        if (!catchUpDismissed && gap != null && gap >= 14) return null; // the catch-up banner has the floor
+        return (
+          <div style={{ flexShrink: 0, display: "flex", alignItems: "center", gap: 12, padding: "8px 14px", marginBottom: 8, background: "#fff", borderLeft: `4px solid ${th.headerBg}`, border: "1px solid #e2e8f0", borderLeftWidth: 4, borderLeftColor: th.headerBg, borderRadius: 12 }}>
+            <span style={{ fontSize: 13.5, color: "#1e293b", flex: 1, lineHeight: 1.4 }}>
+              {encouragement.text}{" "}
+              <a href={encouragement.href} target="_blank" rel="noreferrer" style={{ color: th.headerBg, fontWeight: 700, textDecoration: "none" }}>{encouragement.linkText} →</a>
+            </span>
+            <button onClick={() => { dismissEncouragement(encouragement.id); setEncTick((t) => t + 1); }} className="bf-btn" title="Not now" style={{ border: "none", background: "none", color: "#94a3b8", fontSize: 18, cursor: "pointer", padding: "0 4px" }}>×</button>
+          </div>
+        );
+      })()}
+
       {/* Type filter indicator */}
       {filterType !== "all" && (
         <div style={{ flexShrink: 0, display: "flex", alignItems: "center", gap: 8, padding: "4px 8px", marginBottom: 4, background: filterType === "expense" ? C.redBg : C.greenBg, borderRadius: 8, border: `1px solid ${filterType === "expense" ? C.redBorder : C.greenBorder}` }}>
@@ -2880,7 +2904,13 @@ export default function BudgetForecast() {
                     const isLogoCell = `${wi}-${di}` === lastEmptyKey;
                     return (
                       <div key={`${wi}-${di}`} style={{ minHeight: 0, background: th.calBg, borderTop: `1px solid ${th.gridBorder}`, borderRight: di < 6 ? `1px solid ${th.gridBorder}` : "none", display: "flex", alignItems: "center", justifyContent: "center", padding: 8 }}>
-                        {isLogoCell && <img src="/logo.png" alt="" style={{ maxWidth: "min(60%, 110px)", maxHeight: "min(60%, 80px)", objectFit: "contain", opacity: 0.85 }} />}
+                        {isLogoCell && (
+                          <a href={dayQuote.post ? `/blog/${dayQuote.post}` : "/method"} target="_blank" rel="noreferrer" title={`${dayQuote.attributed ? "Attributed to " : ""}${dayQuote.who} · ${dayQuote.source}`}
+                            style={{ display: "flex", flexDirection: "column", gap: 6, maxWidth: "92%", textDecoration: "none", color: "inherit", opacity: 0.9 }}>
+                            <span style={{ fontSize: Math.max(11, fontSize - 2), lineHeight: 1.35, color: "#334155", fontStyle: "italic" }}>&ldquo;{dayQuote.text}&rdquo;</span>
+                            <span style={{ fontSize: Math.max(10, fontSize - 4), color: "#94a3b8", fontWeight: 600 }}>{dayQuote.attributed ? "attributed to " : ""}{dayQuote.who}</span>
+                          </a>
+                        )}
                       </div>
                     );
                   }

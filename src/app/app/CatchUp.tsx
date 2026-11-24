@@ -308,6 +308,10 @@ export default function CatchUp({ state, th, demo, since, api, callApi, reload, 
               <li>Read where you actually stand for the next 45 days.</li>
             </ol>
             <button onClick={() => setStep(1)} style={primary}>Start</button>
+            <p style={{ fontSize: 12.5, color: "#64748b", margin: "12px 0 0", lineHeight: 1.45 }}>
+              Everyone stops looking for a while. Coming back is the skill.{" "}
+              <a href="/blog/the-three-week-slump" target="_blank" rel="noreferrer" style={{ color: th.headerBg, fontWeight: 700, textDecoration: "none" }}>The three-week slump →</a>
+            </p>
           </>
         )}
 
@@ -494,9 +498,15 @@ export default function CatchUp({ state, th, demo, since, api, callApi, reload, 
               )}
             </div>
 
-            <div style={{ minHeight: 60, fontSize: 15, lineHeight: 1.6, marginBottom: 18 }}>
+            <div style={{ minHeight: 60, fontSize: 15, lineHeight: 1.6, marginBottom: 10 }}>
               {noteBusy ? <span style={{ color: "#94a3b8" }}>Putting this in plain words…</span> : note}
             </div>
+            {guessOff != null && Math.abs(guessOff) <= Math.max(50, Math.abs(actualNum) * 0.05) && (
+              <p style={{ fontSize: 12.5, color: "#64748b", margin: "0 0 16px", lineHeight: 1.45 }}>
+                Your guess was close. That is the quiet win.{" "}
+                <a href="/blog/guess-before-you-look" target="_blank" rel="noreferrer" style={{ color: th.headerBg, fontWeight: 700, textDecoration: "none" }}>Guess before you look →</a>
+              </p>
+            )}
 
             <div style={{ display: "flex", gap: 8 }}>
               <button onClick={() => setStep(3)} style={secondary} disabled={applying}>Back</button>
