@@ -7,6 +7,8 @@ import type { Transaction, OverrideData, AppState } from "@/lib/types";
 import { reconcile, type BankData } from "@/lib/reconcile";
 import type { AssistantAction } from "@/app/api/assistant/route";
 import PlaidDemo from "./PlaidDemo";
+import CatchUp from "./CatchUp";
+import { lastResetDate as catchupLastReset, todayKey as catchupToday, daysBetween as catchupDaysBetween } from "@/lib/catchup";
 import { distributeDebt, simulateDistribution, type DebtPlacement } from "@/lib/debt-distribution";
 
 const DAYS = ["S", "M", "T", "W", "T", "F", "S"];
@@ -368,6 +370,19 @@ export default function BudgetForecast() {
   const [chartMonths, setChartMonths] = useState(1);
   const [showThemePicker, setShowThemePicker] = useState(false);
   const [showPlaidDemo, setShowPlaidDemo] = useState(false);
+  const [showCatchUp, setShowCatchUp] = useState(false);
+  const [catchUpDismissed, setCatchUpDismissed] = useState(() => typeof window !== "undefined" && localStorage.getItem("flowycash-catchup-dismissed") === catchupToday());
+  // The last time the calendar had a real balance: the newest balance reset,
+  // or failing that the last day the app was opened on this device.
+  const [prevSeen] = useState<string | null>(() => typeof window !== "undefined" ? localStorage.getItem("flowycash-last-seen") : null);
+  // Only advance the last-seen date when there is no gap to catch up on, so a
+  // long absence is not erased by simply opening the app and closing it again.
+  useEffect(() => {
+    try {
+      const gap = prevSeen ? catchupDaysBetween(prevSeen, catchupToday()) : 0;
+      if (gap < 14) localStorage.setItem("flowycash-last-seen", catchupToday());
+    } catch {}
+  }, [prevSeen]);
   const [showLabs, setShowLabs] = useState(false);
   const [restoreFile, setRestoreFile] = useState<File | null>(null);
   const [restoreConfirm, setRestoreConfirm] = useState("");
@@ -397,11 +412,17 @@ export default function BudgetForecast() {
   const [debtChunks, setDebtChunks] = useState<DebtPlacement[]>([]);
   const [debtName, setDebtName] = useState("Debt Repayment");
 
+  // Several writes can land in one tick (catch-up, reconcile apply). Read the
+  // latest demo state from a ref so each write builds on the previous one
+  // instead of on the state captured when the callback was created.
+  const demoRef = useRef<AppState | null>(null);
+  useEffect(() => { demoRef.current = demoState; }, [demoState]);
   const demoApi = useCallback(async (url: string, opts?: RequestInit) => {
-    if (!demoState) return {};
+    const base = demoRef.current || demoState;
+    if (!base) return {};
     const body = opts?.body ? JSON.parse(opts.body as string) : {};
     const method = opts?.method || "GET";
-    let ds = { ...demoState, transactions: [...demoState.transactions], overrides: { ...demoState.overrides }, balanceResets: { ...demoState.balanceResets } };
+    let ds = { ...base, transactions: [...base.transactions], overrides: { ...base.overrides }, balanceResets: { ...base.balanceResets } };
 
     if (url === "/api/transactions" && method === "POST") {
       ds.transactions.push({ id: `demo-${Date.now()}`, name: body.name, amount: body.amount, type: body.type, recurrence: body.recurrence || "none", startDate: body.startDate, autopay: body.autopay || false, reminder: body.reminder || false, tags: body.tags || "", highlight: body.highlight || "", note: body.note || "" });
@@ -427,6 +448,7 @@ export default function BudgetForecast() {
       else delete ds.monthNotes[body.month];
     }
 
+    demoRef.current = ds;
     setDemoState(ds);
     setState(ds);
     return {};
@@ -1597,6 +1619,22 @@ export default function BudgetForecast() {
                 <span style={{ fontWeight: 700, fontVariantNumeric: "tabular-nums", color: tx.type === "income" ? C.greenDark : C.redDark }}>{fmt(Math.abs(tx.amount))}</span>
               </button>
             ))}
+          </div>
+        );
+      })()}
+
+      {/* Catch-up nudge after a long gap */}
+      {loaded && !catchUpDismissed && !showCatchUp && (() => {
+        const since = catchupLastReset(state) || prevSeen;
+        const gap = since ? catchupDaysBetween(since, catchupToday()) : null;
+        if (gap == null || gap < 14) return null;
+        return (
+          <div style={{ flexShrink: 0, display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", marginBottom: 8, background: th.totalBg, border: `1.5px solid ${th.accent}`, borderRadius: 12 }}>
+            <span style={{ fontSize: 13.5, color: "#1e293b", flex: 1, lineHeight: 1.4 }}>
+              It has been <strong>{gap} days</strong> since the calendar had a real balance. Two minutes to catch up, no judgment.
+            </span>
+            <button onClick={() => setShowCatchUp(true)} className="bf-btn" style={{ border: "none", background: th.headerBg, color: "#fff", borderRadius: 999, padding: "8px 14px", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>Catch up</button>
+            <button onClick={() => { setCatchUpDismissed(true); try { localStorage.setItem("flowycash-catchup-dismissed", catchupToday()); } catch {} }} className="bf-btn" title="Not today" style={{ border: "none", background: "none", color: "#94a3b8", fontSize: 18, cursor: "pointer", padding: "0 4px" }}>×</button>
           </div>
         );
       })()}
@@ -3063,7 +3101,11 @@ export default function BudgetForecast() {
               <button onClick={() => setShowLabs(false)} className="bf-btn" style={{ border: "none", background: "none", fontSize: 20, color: "#94a3b8", cursor: "pointer", padding: "0 4px" }}>×</button>
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              <button onClick={() => { setShowLabs(false); setShowPlaidDemo(true); }} className="bf-btn" style={{ textAlign: "left", display: "flex", flexDirection: "column", gap: 2, padding: "10px 12px", borderRadius: 10, border: `1.5px solid ${th.accent}`, background: th.totalBg, cursor: "pointer", fontFamily: "inherit" }}>
+              <button onClick={() => { setShowLabs(false); setShowCatchUp(true); }} className="bf-btn" style={{ textAlign: "left", display: "flex", flexDirection: "column", gap: 2, padding: "10px 12px", borderRadius: 10, border: `1.5px solid ${th.accent}`, background: th.totalBg, cursor: "pointer", fontFamily: "inherit" }}>
+                <span style={{ fontSize: 14, fontWeight: 600, color: "#1e293b" }}>Catch up</span>
+                <span style={{ fontSize: 12, color: "#64748b" }}>Been away a while? Guess, confirm, enter the real balance, see where you stand.</span>
+              </button>
+              <button onClick={() => { setShowLabs(false); setShowPlaidDemo(true); }} className="bf-btn" style={{ textAlign: "left", display: "flex", flexDirection: "column", gap: 2, padding: "10px 12px", borderRadius: 10, border: "1.5px solid #e2e8f0", background: "#fff", cursor: "pointer", fontFamily: "inherit" }}>
                 <span style={{ fontSize: 14, fontWeight: 600, color: "#1e293b" }}>Plaid demo</span>
                 <span style={{ fontSize: 12, color: "#64748b" }}>Preview the bank-linked Flowy Cash on sample data.</span>
               </button>
@@ -3121,6 +3163,12 @@ export default function BudgetForecast() {
       )}
 
       {showPlaidDemo && <PlaidDemo onClose={() => setShowPlaidDemo(false)} />}
+      {showCatchUp && (
+        <CatchUp state={state} th={th} demo={demo} since={catchupLastReset(state) || prevSeen} api={api} callApi={callApi} reload={reload}
+          onClose={() => { setShowCatchUp(false); setCatchUpDismissed(true); }}
+          onApplied={() => { try { localStorage.setItem("flowycash-last-seen", catchupToday()); } catch {} }}
+          fmt={fmt} friendlyDate={friendlyDate} />
+      )}
 
       {/* Calendar feed */}
       {calFeed.open && (
