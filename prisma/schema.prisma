@@ -267,3 +267,28 @@ model EmailDraft {
 
   @@index([status, createdAt])
 }
+
+// ───────── PLAID (bank link) ─────────
+// One row per linked bank login ("Item"). The access token is encrypted at
+// rest with PLAID_TOKEN_KEY (falls back to a key derived from the Clerk
+// secret). trackedAccountId is the one account this calendar follows.
+model PlaidItem {
+  id               String    @id @default(cuid())
+  userId           String
+  itemId           String    @unique
+  accessToken      String    // encrypted, see src/lib/plaid.ts
+  institutionId    String    @default("")
+  institutionName  String    @default("")
+  trackedAccountId String?   // Plaid account_id of the account the calendar tracks
+  trackedName      String    @default("")
+  trackedMask      String    @default("")
+  cursor           String?   // transactions/sync cursor
+  status           String    @default("ok") // ok | login_required | error
+  lastError        String    @default("")
+  lastSyncedAt     DateTime?
+  lastBalance      Float?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@index([userId])
+}

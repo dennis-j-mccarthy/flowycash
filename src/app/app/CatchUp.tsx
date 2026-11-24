@@ -27,13 +27,14 @@ interface Props {
   reload: () => Promise<void>;
   onClose: () => void;
   onApplied?: () => void;
+  linked?: { name: string; mask: string; balance: number | null; syncedAt: string | null } | null; // a Plaid-linked account, if any
   fmt: (v: number) => string;
   friendlyDate: (s: string) => string;
 }
 
 const STEPS = ["Start", "Guess", "What happened", "Real balance", "Where you stand"];
 
-export default function CatchUp({ state, th, demo, since, api, callApi, reload, onClose, onApplied, fmt, friendlyDate }: Props) {
+export default function CatchUp({ state, th, demo, since, api, callApi, reload, onClose, onApplied, linked, fmt, friendlyDate }: Props) {
   const today = todayKey();
   const from = since || addDays(today, -30);
   const gapDays = Math.max(0, daysBetween(from, today));
@@ -46,6 +47,20 @@ export default function CatchUp({ state, th, demo, since, api, callApi, reload, 
   const [loans, setLoans] = useState<Loan[]>([]);
   const [loanDraft, setLoanDraft] = useState({ name: "", amount: "" });
   const [actual, setActual] = useState("");
+  const [linkBusy, setLinkBusy] = useState(false);
+  const [linkNow, setLinkNow] = useState<{ balance: number; name: string; mask: string } | null>(null);
+  async function readLinkedBank() {
+    setLinkBusy(true);
+    try {
+      const r = await api("/api/plaid/sync", { method: "POST" });
+      const res = (r.results as { account: { balance: number; name: string; mask: string } | null; transactions: { date: string; name: string; amount: number; runningBalance: number | null }[] }[] | undefined)?.find((x) => x.account);
+      if (res && res.account) {
+        setLinkNow({ balance: res.account.balance, name: res.account.name, mask: res.account.mask });
+        setActual(String(res.account.balance));
+        if (res.transactions.length) setBank({ accounts: [{ name: res.account.name, last4: res.account.mask, balance: res.account.balance }], transactions: res.transactions });
+      }
+    } finally { setLinkBusy(false); }
+  }
   const [bank, setBank] = useState<BankData | null>(null);
   const [bankBusy, setBankBusy] = useState(false);
   const [bankErr, setBankErr] = useState("");
@@ -398,6 +413,15 @@ export default function CatchUp({ state, th, demo, since, api, callApi, reload, 
             <p style={{ fontSize: 13, color: "#64748b", margin: "0 0 14px" }}>
               After your corrections, the calendar expects <strong style={{ color: "#0f172a" }}>{fmt(forecastToday)}</strong> today{guess.trim() ? <>; you guessed <strong style={{ color: "#0f172a" }}>{fmt(guessNum || 0)}</strong></> : null}.
             </p>
+            {linked && (
+              <div style={{ marginBottom: 12, padding: "10px 12px", border: `1.5px solid ${th.accent}`, borderRadius: 12, background: th.totalBg, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                <span style={{ flex: 1, fontSize: 13.5, lineHeight: 1.45 }}>
+                  Your bank is linked: <strong>{linked.name}{linked.mask ? ` …${linked.mask}` : ""}</strong>.
+                  {linkNow ? <> Right now it says <strong>{fmt(linkNow.balance)}</strong>.</> : linked.balance != null ? <> Last read <strong>{fmt(linked.balance)}</strong>{linked.syncedAt ? ` on ${new Date(linked.syncedAt).toLocaleString()}` : ""}.</> : null}
+                </span>
+                <button onClick={readLinkedBank} disabled={linkBusy} style={{ padding: "8px 12px", borderRadius: 10, border: "none", background: th.headerBg, color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", opacity: linkBusy ? 0.7 : 1 }}>{linkBusy ? "Reading…" : linkNow ? "Read again" : "Read it now"}</button>
+              </div>
+            )}
             <label style={label}>Actual balance today</label>
             <input autoFocus type="number" step="0.01" inputMode="decimal" value={actual} onChange={(e) => setActual(e.target.value)} placeholder={reconciled ? String(reconciled.balance) : "0.00"} style={input}
               onKeyDown={(e) => { if (e.key === "Enter" && haveActual) goToVerdict(); }} />

@@ -20,9 +20,11 @@
     "next": "16.2.2",
     "papaparse": "^5.5.4",
     "pg": "^8.20.0",
+    "plaid": "^52.0.0",
     "prisma": "^7.6.0",
     "react": "19.2.4",
     "react-dom": "19.2.4",
+    "react-plaid-link": "^5.0.0",
     "resend": "^6.17.1",
     "stripe": "^22.0.0",
     "web-push": "^3.6.7"

@@ -8,6 +8,7 @@ import { reconcile, type BankData } from "@/lib/reconcile";
 import type { AssistantAction } from "@/app/api/assistant/route";
 import PlaidDemo from "./PlaidDemo";
 import CatchUp from "./CatchUp";
+import BankLink, { type PlaidItemInfo } from "./BankLink";
 import { lastResetDate as catchupLastReset, todayKey as catchupToday, daysBetween as catchupDaysBetween } from "@/lib/catchup";
 import { distributeDebt, simulateDistribution, type DebtPlacement } from "@/lib/debt-distribution";
 
@@ -371,6 +372,13 @@ export default function BudgetForecast() {
   const [showThemePicker, setShowThemePicker] = useState(false);
   const [showPlaidDemo, setShowPlaidDemo] = useState(false);
   const [showCatchUp, setShowCatchUp] = useState(false);
+  const [showBankLink, setShowBankLink] = useState(false);
+  const [plaidItems, setPlaidItems] = useState<PlaidItemInfo[]>([]);
+  const refreshPlaid = useCallback(async () => {
+    if (demo || !isSignedIn) { setPlaidItems([]); return; }
+    try { const r = await api("/api/plaid/item"); setPlaidItems(Array.isArray(r.items) ? (r.items as PlaidItemInfo[]) : []); } catch { setPlaidItems([]); }
+  }, [demo, isSignedIn]);
+  useEffect(() => { refreshPlaid(); }, [refreshPlaid]);
   const [catchUpDismissed, setCatchUpDismissed] = useState(() => typeof window !== "undefined" && localStorage.getItem("flowycash-catchup-dismissed") === catchupToday());
   // The last time the calendar had a real balance: the newest balance reset,
   // or failing that the last day the app was opened on this device.
@@ -3105,6 +3113,10 @@ export default function BudgetForecast() {
                 <span style={{ fontSize: 14, fontWeight: 600, color: "#1e293b" }}>Catch up</span>
                 <span style={{ fontSize: 12, color: "#64748b" }}>Been away a while? Guess, confirm, enter the real balance, see where you stand.</span>
               </button>
+              <button onClick={() => { setShowLabs(false); setShowBankLink(true); }} className="bf-btn" style={{ textAlign: "left", display: "flex", flexDirection: "column", gap: 2, padding: "10px 12px", borderRadius: 10, border: "1.5px solid #e2e8f0", background: "#fff", cursor: "pointer", fontFamily: "inherit" }}>
+                <span style={{ fontSize: 14, fontWeight: 600, color: "#1e293b" }}>Connect bank{plaidItems.length ? ` · ${plaidItems[0].institutionName || "linked"}` : ""}</span>
+                <span style={{ fontSize: 12, color: "#64748b" }}>{plaidItems.length ? "Linked through Plaid. Check the balance, sync, or disconnect." : "Link a bank through Plaid so today's balance sets itself every morning."}</span>
+              </button>
               <button onClick={() => { setShowLabs(false); setShowPlaidDemo(true); }} className="bf-btn" style={{ textAlign: "left", display: "flex", flexDirection: "column", gap: 2, padding: "10px 12px", borderRadius: 10, border: "1.5px solid #e2e8f0", background: "#fff", cursor: "pointer", fontFamily: "inherit" }}>
                 <span style={{ fontSize: 14, fontWeight: 600, color: "#1e293b" }}>Plaid demo</span>
                 <span style={{ fontSize: 12, color: "#64748b" }}>Preview the bank-linked Flowy Cash on sample data.</span>
@@ -3163,8 +3175,10 @@ export default function BudgetForecast() {
       )}
 
       {showPlaidDemo && <PlaidDemo onClose={() => setShowPlaidDemo(false)} />}
+      {showBankLink && <BankLink th={th} api={api} reload={reload} onClose={() => setShowBankLink(false)} onChanged={refreshPlaid} fmt={fmt} />}
       {showCatchUp && (
         <CatchUp state={state} th={th} demo={demo} since={catchupLastReset(state) || prevSeen} api={api} callApi={callApi} reload={reload}
+          linked={plaidItems.find((i) => i.trackedAccountId) ? { name: plaidItems.find((i) => i.trackedAccountId)!.trackedName, mask: plaidItems.find((i) => i.trackedAccountId)!.trackedMask, balance: plaidItems.find((i) => i.trackedAccountId)!.lastBalance, syncedAt: plaidItems.find((i) => i.trackedAccountId)!.lastSyncedAt } : null}
           onClose={() => { setShowCatchUp(false); setCatchUpDismissed(true); }}
           onApplied={() => { try { localStorage.setItem("flowycash-last-seen", catchupToday()); } catch {} }}
           fmt={fmt} friendlyDate={friendlyDate} />
