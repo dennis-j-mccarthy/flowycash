@@ -100,7 +100,37 @@ export default function CatchUp({ state, th, demo, since, api, callApi, reload, 
   }
 
   const forecastToday = useMemo(() => balanceOn(correctedState, today), [correctedState, today]);
-  const reconciled = useMemo(() => (bank ? reconcile(bank, correctedState) : null), [bank, correctedState]);
+  // A bank accounts screen often lists several accounts. The calendar tracks
+  // one (sometimes two), so the user picks which ones count. Default: the
+  // account closest to their guess, or to the plan's number, remembered by
+  // last-4 for next time.
+  const [picked, setPicked] = useState<Set<string> | null>(null);
+  const acctKey = (a: { name: string; last4: string }) => `${a.name}|${a.last4}`;
+  const accounts = useMemo(() => {
+    const seen = new Set<string>();
+    return (bank?.accounts || []).filter((a) => { const k = acctKey(a); if (seen.has(k)) return false; seen.add(k); return true; });
+  }, [bank]);
+  useEffect(() => {
+    if (picked !== null || accounts.length === 0) return;
+    let def: string[] = [];
+    try {
+      const saved: string[] = JSON.parse(localStorage.getItem("flowycash-tracked-accounts") || "[]");
+      def = accounts.filter((a) => saved.includes(a.last4)).map(acctKey);
+    } catch {}
+    if (!def.length) {
+      const g = parseFloat(guess);
+      const target = !isNaN(g) && guess.trim() !== "" ? g : forecastToday;
+      const best = accounts.reduce((m, a) => (Math.abs(a.balance - target) < Math.abs(m.balance - target) ? a : m), accounts[0]);
+      def = [acctKey(best)];
+    }
+    setPicked(new Set(def));
+  }, [accounts, picked, guess, forecastToday]);
+  const bankPicked = useMemo<BankData | null>(() => {
+    if (!bank) return null;
+    if (accounts.length <= 1 || !picked) return bank;
+    return { ...bank, accounts: accounts.filter((a) => picked.has(acctKey(a))) };
+  }, [bank, accounts, picked]);
+  const reconciled = useMemo(() => (bankPicked ? reconcile(bankPicked, correctedState) : null), [bankPicked, correctedState]);
   const actualNum = actual.trim() !== "" ? parseFloat(actual) : reconciled ? reconciled.balance : NaN;
   const haveActual = !isNaN(actualNum);
 
@@ -384,9 +414,29 @@ export default function CatchUp({ state, th, demo, since, api, callApi, reload, 
             <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 8, lineHeight: 1.4 }}>Screenshots and CSVs are read by AI (Anthropic Claude) to pull out the balance. The file itself is not saved.</div>
             {bankBusy && <div style={{ fontSize: 13, color: "#64748b", marginTop: 10 }}>Reading your statement…</div>}
             {bankErr && <div style={{ fontSize: 13, color: "#b91c1c", marginTop: 10 }}>{bankErr}</div>}
-            {reconciled && !bankBusy && (
+            {accounts.length > 1 && !bankBusy && (
+              <div style={{ marginTop: 10, padding: "10px 12px", border: "1px solid #e2e8f0", borderRadius: 10 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 2 }}>Which account does this calendar track?</div>
+                <div style={{ fontSize: 12, color: "#64748b", marginBottom: 8 }}>The screenshot shows {accounts.length} accounts. Tick the one{accounts.length > 2 ? "s" : ""} this calendar is about; the rest are ignored.</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  {accounts.map((a) => {
+                    const k = acctKey(a); const on = !!picked?.has(k);
+                    return (
+                      <label key={k} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", borderRadius: 10, border: `1.5px solid ${on ? th.accent : "#e2e8f0"}`, background: on ? th.totalBg : "#fff", cursor: "pointer", fontSize: 13 }}>
+                        <input type="checkbox" checked={on} onChange={() => {
+                          setPicked((p) => { const n = new Set(p || []); if (n.has(k)) n.delete(k); else n.add(k); try { localStorage.setItem("flowycash-tracked-accounts", JSON.stringify(accounts.filter((x) => n.has(acctKey(x))).map((x) => x.last4))); } catch {} return n; });
+                        }} />
+                        <span style={{ flex: 1, fontWeight: 600 }}>{a.name}{a.last4 ? ` …${a.last4}` : ""}</span>
+                        <span style={{ fontVariantNumeric: "tabular-nums", fontWeight: 700 }}>{fmt(a.balance)}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+            {reconciled && !bankBusy && (picked?.size || accounts.length <= 1) && (
               <div style={{ marginTop: 10, padding: "10px 12px", background: th.totalBg, border: `1px solid ${th.accent}55`, borderRadius: 10, fontSize: 13 }}>
-                Read a balance of <strong>{fmt(reconciled.balance)}</strong>{reconciled.moved.length ? <>, and {reconciled.moved.length} scheduled item{reconciled.moved.length === 1 ? " has" : "s have"} already cleared (they will be moved onto the day they posted)</> : null}. Leave the box empty to use it, or type a number to override.
+                {accounts.length > 1 ? "Using" : "Read"} a balance of <strong>{fmt(reconciled.balance)}</strong>{reconciled.moved.length ? <>, and {reconciled.moved.length} scheduled item{reconciled.moved.length === 1 ? " has" : "s have"} already cleared (they will be moved onto the day they posted)</> : null}. Leave the box empty to use it, or type a number to override.
               </div>
             )}
             <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
