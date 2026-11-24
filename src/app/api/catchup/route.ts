@@ -14,7 +14,7 @@ interface Facts {
   forecastToday: number;
   actual: number;
   delta: number; // actual - forecastToday
-  confirmed: { happened: number; skipped: number; changed: number; added: number };
+  confirmed: { happened: number; skipped: number; changed: number; added: number; loans?: { name: string; amount: number; chunks: number }[] };
   lowest: { date: string; bal: number };
   negativeDays: number;
   nextIncome: { date: string; name: string; amount: number } | null;
@@ -31,6 +31,7 @@ Write 3 to 5 short sentences, plain English, second person, calm and specific. R
 - Use the actual numbers given. Do not invent numbers, items, or dates.
 - If the guess was close to the actual, say so in a sentence, because it means their sense of their money is good. If it was far off, say which direction without any judgment.
 - If the lowest point in the window is above zero, say what the lowest point is and when, and that nothing needs to move.
+- If the user added loans to repay (confirmed.loans), mention in one clause that the repayments are now on the calendar in chunks, already counted in the lowest point.
 - If it dips below zero, name the date and the amount and point to the next income date, and suggest the one most useful move (an item to shift past payday) using only the items listed.
 - No exclamation marks, no emoji, no praise words like "great job", no headers, no bullet points. Dollar amounts like $1,234. Dates like Nov 14.`;
 

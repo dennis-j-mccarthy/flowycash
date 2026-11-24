@@ -3,7 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import type { AppState } from "@/lib/types";
 import { reconcile, type BankData } from "@/lib/reconcile";
-import { addDays, balanceOn, daysBetween, largeGapEvents, outlookAfter, todayKey, type Occ, type Outlook } from "@/lib/catchup";
+import { addDays, balanceOn, dailyBalances, daysBetween, largeGapEvents, occurrencesBetween, outlookAfter, todayKey, type Occ, type Outlook } from "@/lib/catchup";
+import { distributeDebt, type DailyPoint, type DebtPlacement } from "@/lib/debt-distribution";
 
 // "Catch up": a short guided check-in for someone who has not opened the app
 // in a while. Guess the balance, confirm the big things that happened, enter
@@ -12,6 +13,7 @@ import { addDays, balanceOn, daysBetween, largeGapEvents, outlookAfter, todayKey
 type EventStatus = "happened" | "skipped" | "changed";
 interface EventRow extends Occ { status: EventStatus; newAmount: string }
 interface Added { name: string; amount: string; type: "income" | "expense"; date: string }
+interface Loan { name: string; amount: number; chunks: DebtPlacement[] }
 
 interface Theme { headerBg: string; accent: string; totalBg: string }
 
@@ -41,6 +43,8 @@ export default function CatchUp({ state, th, demo, since, api, callApi, reload, 
   const [events, setEvents] = useState<EventRow[]>(() => largeGapEvents(state, from, today).map((o) => ({ ...o, status: "happened", newAmount: String(o.amount) })));
   const [added, setAdded] = useState<Added[]>([]);
   const [addDraft, setAddDraft] = useState<Added>({ name: "", amount: "", type: "expense", date: today });
+  const [loans, setLoans] = useState<Loan[]>([]);
+  const [loanDraft, setLoanDraft] = useState({ name: "", amount: "" });
   const [actual, setActual] = useState("");
   const [bank, setBank] = useState<BankData | null>(null);
   const [bankBusy, setBankBusy] = useState(false);
@@ -68,8 +72,32 @@ export default function CatchUp({ state, th, demo, since, api, callApi, reload, 
       if (!a.name.trim() || isNaN(n) || n <= 0 || !a.date) return;
       transactions.push({ id: `catchup-added-${i}`, name: a.name.trim(), amount: n, type: a.type, recurrence: "none", startDate: a.date, autopay: false, reminder: false, tags: "", highlight: "", note: "" });
     });
+    loans.forEach((l, i) => l.chunks.forEach((c, j) => {
+      transactions.push({ id: `catchup-loan-${i}-${j}`, name: l.name, amount: c.amount, type: "expense", recurrence: "none", startDate: c.date, autopay: false, reminder: false, tags: "debt", highlight: "", note: "" });
+    }));
     return { ...state, overrides, transactions };
-  }, [state, events, added]);
+  }, [state, events, added, loans]);
+
+  // The next 60 days as the debt spreader expects them, so a loan can be
+  // split across upcoming paydays.
+  const futurePoints = useMemo<DailyPoint[]>(() => {
+    const to = addDays(today, 60);
+    const occs = occurrencesBetween(state, today, to);
+    return dailyBalances(state, to).filter((d) => d.date >= today).map((d) => ({
+      date: d.date,
+      balance: d.bal,
+      transactions: occs.filter((o) => o.date === d.date).map((o) => ({ type: o.type, amount: o.amount })),
+    }));
+  }, [state, today]);
+
+  function addLoan() {
+    const n = parseFloat(loanDraft.amount);
+    if (!loanDraft.name.trim() || isNaN(n) || n <= 0) return;
+    const chunks = distributeDebt(n, futurePoints, { today });
+    if (!chunks.length) return;
+    setLoans((p) => [...p, { name: `Repay ${loanDraft.name.trim()}`, amount: n, chunks }]);
+    setLoanDraft({ name: "", amount: "" });
+  }
 
   const forecastToday = useMemo(() => balanceOn(correctedState, today), [correctedState, today]);
   const reconciled = useMemo(() => (bank ? reconcile(bank, correctedState) : null), [bank, correctedState]);
@@ -133,6 +161,7 @@ export default function CatchUp({ state, th, demo, since, api, callApi, reload, 
         skipped: events.filter((e) => e.status === "skipped").length,
         changed: events.filter((e) => e.status === "changed").length,
         added: added.filter((a) => a.name.trim() && parseFloat(a.amount) > 0).length,
+        loans: loans.map((l) => ({ name: l.name, amount: l.amount, chunks: l.chunks.length })),
       },
       lowest: o.lowest,
       negativeDays: o.negativeDays,
@@ -166,6 +195,12 @@ export default function CatchUp({ state, th, demo, since, api, callApi, reload, 
         if (!a.name.trim() || isNaN(n) || n <= 0 || !a.date) continue;
         await callApi("/api/transactions", { method: "POST", body: JSON.stringify({ name: a.name.trim(), amount: n, type: a.type, recurrence: "none", startDate: a.date }) });
         writes++;
+      }
+      for (const l of loans) {
+        for (const c of l.chunks) {
+          await callApi("/api/transactions", { method: "POST", body: JSON.stringify({ name: l.name, amount: c.amount, type: "expense", recurrence: "none", startDate: c.date, tags: "debt" }) });
+          writes++;
+        }
       }
       // Future-scheduled items the bank shows already cleared: move them onto
       // the posted date so they are not counted twice after the reset.
@@ -292,6 +327,29 @@ export default function CatchUp({ state, th, demo, since, api, callApi, reload, 
                 </div>
                 <button onClick={() => { if (addDraft.name.trim() && parseFloat(addDraft.amount) > 0) { setAdded((p) => [...p, addDraft]); setAddDraft({ name: "", amount: "", type: "expense", date: today }); } }}
                   style={{ ...secondary, padding: "8px 10px", fontSize: 13, color: th.headerBg, borderColor: th.accent }}>Add</button>
+              </div>
+            </div>
+
+            <div style={{ border: `1.5px dashed ${th.accent}`, borderRadius: 12, padding: "10px 12px", marginBottom: 16, background: th.totalBg }}>
+              <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 2 }}>Any loans that need to be repaid?</div>
+              <div style={{ fontSize: 12, color: "#64748b", marginBottom: 8, lineHeight: 1.4 }}>Money you borrowed and still owe. If it landed in your account, it is already in today&rsquo;s balance; this only schedules paying it back, split across your next paydays.</div>
+              {loans.map((l, i) => (
+                <div key={i} style={{ fontSize: 13, padding: "6px 0", borderTop: i ? "1px solid #e2e8f0" : "none" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between" }}>
+                    <span style={{ fontWeight: 600 }}>{l.name}</span>
+                    <span style={{ fontWeight: 700, color: "#b91c1c" }}>-{fmt(l.amount)}
+                      <button onClick={() => setLoans((p) => p.filter((_, j) => j !== i))} style={{ marginLeft: 8, border: "none", background: "none", color: "#94a3b8", cursor: "pointer" }} aria-label="Remove">×</button>
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 12, color: "#475569", marginTop: 2 }}>{l.chunks.map((c) => `${fmt(c.amount)} on ${friendlyDate(c.date)}`).join(" · ")}</div>
+                </div>
+              ))}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 90px auto", gap: 6, marginTop: 6 }}>
+                <input placeholder="Who or what (e.g. Mom, credit line)" value={loanDraft.name} onChange={(e) => setLoanDraft({ ...loanDraft, name: e.target.value })} style={{ ...input, fontSize: 13, padding: "8px 10px" }}
+                  onKeyDown={(e) => { if (e.key === "Enter") addLoan(); }} />
+                <input placeholder="Owed" type="number" step="0.01" inputMode="decimal" value={loanDraft.amount} onChange={(e) => setLoanDraft({ ...loanDraft, amount: e.target.value })} style={{ ...input, fontSize: 13, padding: "8px 10px" }}
+                  onKeyDown={(e) => { if (e.key === "Enter") addLoan(); }} />
+                <button onClick={addLoan} style={{ ...secondary, padding: "8px 10px", fontSize: 13, color: th.headerBg, borderColor: th.accent }}>Spread it</button>
               </div>
             </div>
 
