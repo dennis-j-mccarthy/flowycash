@@ -14,8 +14,22 @@ export interface SyncResult {
   account: { id: string; name: string; mask: string; balance: number } | null;
   accounts: { id: string; name: string; mask: string; balance: number; type: string }[];
   transactions: BankTransaction[];
+  unknown: UnknownRow[]; // posted at the bank, nothing on the calendar matches (already in the balance)
   applied: { reset: boolean; moved: number } | null;
   error?: string;
+}
+
+export interface UnknownRow { date: string; name: string; amount: number; type: "income" | "expense" }
+
+function mergeUnknown(prev: string, add: UnknownRow[]): UnknownRow[] {
+  let list: UnknownRow[] = [];
+  try { list = JSON.parse(prev || "[]"); } catch { list = []; }
+  const key = (r: UnknownRow) => `${r.date}|${r.name}|${r.amount}`;
+  const seen = new Set(list.map(key));
+  add.forEach((r) => { if (!seen.has(key(r))) { list.push(r); seen.add(key(r)); } });
+  const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - 30);
+  const minDate = cutoff.toISOString().slice(0, 10);
+  return list.filter((r) => r.date >= minDate).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 50);
 }
 
 type Item = Awaited<ReturnType<typeof prisma.plaidItem.findFirstOrThrow>>;
@@ -23,7 +37,7 @@ type Item = Awaited<ReturnType<typeof prisma.plaidItem.findFirstOrThrow>>;
 export async function syncItem(item: Item, opts: { apply: boolean }): Promise<SyncResult> {
   const token = decryptToken(item.accessToken);
   const api = plaid();
-  const base: SyncResult = { itemId: item.itemId, institutionName: item.institutionName, account: null, accounts: [], transactions: [], applied: null };
+  const base: SyncResult = { itemId: item.itemId, institutionName: item.institutionName, account: null, accounts: [], transactions: [], unknown: [], applied: null };
   try {
     const bal = await api.accountsBalanceGet({ access_token: token });
     const accounts = bal.data.accounts.map((a) => ({
@@ -69,6 +83,16 @@ export async function syncItem(item: Item, opts: { apply: boolean }): Promise<Sy
       if (!item.trackedAccountId) { update.trackedAccountId = tracked.id; update.trackedName = tracked.name; update.trackedMask = tracked.mask; }
     }
 
+    // Match the new posted rows against the calendar whenever there is a
+    // tracked account, so the panel can show what the bank has that the
+    // calendar does not. Writes happen only under apply.
+    let matched: ReturnType<typeof reconcile> | null = null;
+    if (tracked && added.length) {
+      const state = await loadState(item.userId);
+      matched = reconcile({ accounts: [{ name: tracked.name, last4: tracked.mask, balance: tracked.balance }], transactions: added }, state);
+      base.unknown = matched.unaccounted.map((u) => ({ date: u.date, name: u.name, amount: u.amount, type: u.type === "income" ? "income" : "expense" }));
+    }
+
     if (opts.apply && tracked) {
       const today = todayKey();
       await prisma.balanceReset.upsert({
@@ -77,10 +101,8 @@ export async function syncItem(item: Item, opts: { apply: boolean }): Promise<Sy
         create: { userId: item.userId, date: today, amount: tracked.balance },
       });
       let moved = 0;
-      if (added.length) {
-        const state = await loadState(item.userId);
-        const r = reconcile({ accounts: [{ name: tracked.name, last4: tracked.mask, balance: tracked.balance }], transactions: added }, state);
-        for (const m of r.moved) {
+      if (matched) {
+        for (const m of matched.moved) {
           await prisma.override.upsert({
             where: { transactionId_occurrenceDate: { transactionId: m.txId, occurrenceDate: m.occurrenceDate } },
             update: { movedTo: m.to },
@@ -90,6 +112,7 @@ export async function syncItem(item: Item, opts: { apply: boolean }): Promise<Sy
         }
       }
       update.cursor = cursor; // consume the cursor only once the rows have been acted on
+      update.lastUnknown = JSON.stringify(mergeUnknown(item.lastUnknown, base.unknown));
       base.applied = { reset: true, moved };
     }
     await prisma.plaidItem.update({ where: { id: item.id }, data: update });

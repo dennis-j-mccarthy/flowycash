@@ -287,6 +287,7 @@ model PlaidItem {
   lastError        String    @default("")
   lastSyncedAt     DateTime?
   lastBalance      Float?
+  lastUnknown      String    @default("[]") // JSON: posted bank rows with no calendar match, last 30 days
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 

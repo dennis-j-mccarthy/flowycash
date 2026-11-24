@@ -11,6 +11,7 @@ export interface PlaidItemInfo {
   itemId: string; institutionName: string; status: string; lastError: string;
   trackedAccountId: string | null; trackedName: string; trackedMask: string;
   lastSyncedAt: string | null; lastBalance: number | null;
+  unknown?: { date: string; name: string; amount: number; type: "income" | "expense" }[];
 }
 interface Acct { id: string; name: string; mask: string; balance: number; type: string }
 
@@ -33,6 +34,7 @@ export default function BankLink({ th, api, reload, onClose, onChanged, fmt }: P
   const [err, setErr] = useState("");
   const [pick, setPick] = useState<{ itemId: string; institutionName: string; accounts: Acct[]; chosen: string | null } | null>(null);
   const [syncMsg, setSyncMsg] = useState("");
+  const [liveUnknown, setLiveUnknown] = useState<Record<string, { date: string; name: string; amount: number; type: "income" | "expense" }[]>>({});
 
   const refresh = useCallback(async () => {
     const r = await api("/api/plaid/item");
@@ -89,9 +91,10 @@ export default function BankLink({ th, api, reload, onClose, onChanged, fmt }: P
     try {
       const r = await api(`/api/plaid/sync${apply ? "?apply=1" : ""}`, { method: "POST" });
       if (r.error) throw new Error(String(r.error));
-      const results = (r.results as { account: Acct | null; transactions: unknown[]; applied: { moved: number } | null; error?: string }[]) || [];
-      const lines = results.map((x) => x.error ? `Error: ${x.error}` : x.account ? `${x.account.name} …${x.account.mask}: ${fmt(x.account.balance)}, ${x.transactions.length} new posted transaction${x.transactions.length === 1 ? "" : "s"}${x.applied ? `. Reset saved for today, ${x.applied.moved} moved.` : "."}` : "No tracked account yet. Pick one below.");
+      const results = (r.results as { itemId: string; account: Acct | null; transactions: unknown[]; unknown: { date: string; name: string; amount: number; type: "income" | "expense" }[]; applied: { moved: number } | null; error?: string }[]) || [];
+      const lines = results.map((x) => x.error ? `Error: ${x.error}` : x.account ? `${x.account.name} …${x.account.mask}: ${fmt(x.account.balance)}, ${x.transactions.length} new posted transaction${x.transactions.length === 1 ? "" : "s"}${x.unknown?.length ? `, ${x.unknown.length} not on your calendar` : ""}${x.applied ? `. Reset saved for today, ${x.applied.moved} moved.` : "."}` : "No tracked account yet. Pick one below.");
       setSyncMsg(lines.join(" "));
+      setLiveUnknown(Object.fromEntries(results.map((x) => [x.itemId, x.unknown || []])));
       if (apply) { await reload(); onChanged?.(); }
       await refresh();
     } catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
@@ -141,6 +144,32 @@ export default function BankLink({ th, api, reload, onClose, onChanged, fmt }: P
                   {it.trackedAccountId ? <>Tracking <strong>{it.trackedName}{it.trackedMask ? ` …${it.trackedMask}` : ""}</strong>{it.lastBalance != null && <>, last read <strong>{fmt(it.lastBalance)}</strong></>}{it.lastSyncedAt && <> on {new Date(it.lastSyncedAt).toLocaleString()}</>}.</> : <>No account chosen yet.</>}
                   {it.lastError && it.status !== "ok" && <div style={{ color: "#b91c1c", fontSize: 12 }}>{it.lastError}</div>}
                 </div>
+                {(() => {
+                  const saved = it.unknown || [];
+                  const live = liveUnknown[it.itemId] || [];
+                  const key = (r: { date: string; name: string; amount: number }) => `${r.date}|${r.name}|${r.amount}`;
+                  const seen = new Set<string>();
+                  const rows = [...live, ...saved].filter((r) => { const k = key(r); if (seen.has(k)) return false; seen.add(k); return true; }).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 25);
+                  if (!rows.length) return null;
+                  return (
+                    <div style={{ marginTop: 10, border: "1px solid #fde68a", background: "#fffbeb", borderRadius: 12, padding: "10px 12px" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
+                        <div style={{ fontSize: 12.5, fontWeight: 700, color: "#92400e" }}>Posted at the bank, not on your calendar</div>
+                        {saved.length > 0 && <button onClick={async () => { await api("/api/plaid/item", { method: "PUT", body: JSON.stringify({ itemId: it.itemId, clearUnknown: true }) }); setLiveUnknown((p) => ({ ...p, [it.itemId]: [] })); await refresh(); }} style={{ border: "none", background: "none", color: "#92400e", fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>Clear list</button>}
+                      </div>
+                      <div style={{ fontSize: 11.5, color: "#a16207", margin: "2px 0 8px", lineHeight: 1.4 }}>Already counted in today&rsquo;s balance. Nothing was added. If one of these repeats, put it on the calendar with the + on its day.</div>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                        {rows.map((r) => (
+                          <div key={key(r)} style={{ display: "flex", justifyContent: "space-between", gap: 10, fontSize: 13 }}>
+                            <span style={{ color: "#78716c", width: 52, flexShrink: 0 }}>{new Date(r.date + "T12:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span>
+                            <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.name}</span>
+                            <span style={{ fontWeight: 700, fontVariantNumeric: "tabular-nums", color: r.type === "income" ? "#047857" : "#b91c1c" }}>{r.type === "income" ? "+" : "-"}{fmt(r.amount)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
                   {it.status === "login_required" && <button onClick={() => startLink(it.itemId)} disabled={!!busy} style={{ ...secondary, color: "#b91c1c", borderColor: "#fecaca" }}>Sign in again</button>}
                   <button onClick={() => syncNow(false)} disabled={!!busy} style={secondary}>{busy === "sync" ? "Syncing…" : "Check balance"}</button>
