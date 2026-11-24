@@ -101,6 +101,30 @@ export default function BankLink({ th, api, reload, onClose, onChanged, fmt }: P
     finally { setBusy(""); }
   }
 
+  type URow = { date: string; name: string; amount: number; type: "income" | "expense" };
+  const [rowBusy, setRowBusy] = useState<string>("");
+  async function addUnknown(itemId: string, r: URow, recurrence: "none" | "monthly") {
+    const k = `${r.date}|${r.name}|${r.amount}`;
+    setRowBusy(k);
+    try {
+      await api("/api/transactions", { method: "POST", body: JSON.stringify({ name: r.name, amount: r.amount, type: r.type, recurrence, startDate: r.date, note: "Added from bank" }) });
+      await api("/api/plaid/item", { method: "PUT", body: JSON.stringify({ itemId, removeUnknown: { date: r.date, name: r.name, amount: r.amount } }) });
+      setLiveUnknown((p) => ({ ...p, [itemId]: (p[itemId] || []).filter((x) => `${x.date}|${x.name}|${x.amount}` !== k) }));
+      await refresh();
+      await reload();
+      onChanged?.();
+    } finally { setRowBusy(""); }
+  }
+  async function dismissUnknown(itemId: string, r: URow) {
+    const k = `${r.date}|${r.name}|${r.amount}`;
+    setRowBusy(k);
+    try {
+      await api("/api/plaid/item", { method: "PUT", body: JSON.stringify({ itemId, removeUnknown: { date: r.date, name: r.name, amount: r.amount } }) });
+      setLiveUnknown((p) => ({ ...p, [itemId]: (p[itemId] || []).filter((x) => `${x.date}|${x.name}|${x.amount}` !== k) }));
+      await refresh();
+    } finally { setRowBusy(""); }
+  }
+
   async function disconnect(itemId: string) {
     if (!confirm("Disconnect this bank? The calendar keeps every balance and item it already has; only the live link is removed.")) return;
     setBusy("remove");
@@ -157,15 +181,24 @@ export default function BankLink({ th, api, reload, onClose, onChanged, fmt }: P
                         <div style={{ fontSize: 12.5, fontWeight: 700, color: "#92400e" }}>Posted at the bank, not on your calendar</div>
                         {saved.length > 0 && <button onClick={async () => { await api("/api/plaid/item", { method: "PUT", body: JSON.stringify({ itemId: it.itemId, clearUnknown: true }) }); setLiveUnknown((p) => ({ ...p, [it.itemId]: [] })); await refresh(); }} style={{ border: "none", background: "none", color: "#92400e", fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>Clear list</button>}
                       </div>
-                      <div style={{ fontSize: 11.5, color: "#a16207", margin: "2px 0 8px", lineHeight: 1.4 }}>Already counted in today&rsquo;s balance. Nothing was added. If one of these repeats, put it on the calendar with the + on its day.</div>
-                      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                        {rows.map((r) => (
-                          <div key={key(r)} style={{ display: "flex", justifyContent: "space-between", gap: 10, fontSize: 13 }}>
-                            <span style={{ color: "#78716c", width: 52, flexShrink: 0 }}>{new Date(r.date + "T12:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span>
-                            <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.name}</span>
-                            <span style={{ fontWeight: 700, fontVariantNumeric: "tabular-nums", color: r.type === "income" ? "#047857" : "#b91c1c" }}>{r.type === "income" ? "+" : "-"}{fmt(r.amount)}</span>
-                          </div>
-                        ))}
+                      <div style={{ fontSize: 11.5, color: "#a16207", margin: "2px 0 8px", lineHeight: 1.4 }}>Already counted in today&rsquo;s balance, so nothing is wrong. Add the ones you want on the calendar: once puts it on the day it posted, monthly repeats it from that day.</div>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                        {rows.map((r) => {
+                          const k = key(r); const busyRow = rowBusy === k;
+                          const mini: React.CSSProperties = { padding: "4px 8px", borderRadius: 8, border: "1px solid #fcd34d", background: "#fff", color: "#92400e", fontSize: 11.5, fontWeight: 700, cursor: busyRow ? "wait" : "pointer", fontFamily: "inherit", opacity: busyRow ? 0.6 : 1 };
+                          return (
+                            <div key={k} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, flexWrap: "wrap" }}>
+                              <span style={{ color: "#78716c", width: 52, flexShrink: 0 }}>{new Date(r.date + "T12:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span>
+                              <span style={{ flex: 1, minWidth: 90, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.name}</span>
+                              <span style={{ fontWeight: 700, fontVariantNumeric: "tabular-nums", color: r.type === "income" ? "#047857" : "#b91c1c" }}>{r.type === "income" ? "+" : "-"}{fmt(r.amount)}</span>
+                              <span style={{ display: "flex", gap: 4 }}>
+                                <button disabled={busyRow} onClick={() => addUnknown(it.itemId, r, "none")} style={mini} title="Add a one-time item on the day it posted">Add once</button>
+                                <button disabled={busyRow} onClick={() => addUnknown(it.itemId, r, "monthly")} style={mini} title="Add it as a monthly item starting on that day">Add monthly</button>
+                                <button disabled={busyRow} onClick={() => dismissUnknown(it.itemId, r)} style={{ ...mini, border: "1px solid #e7e5e4", color: "#78716c" }} title="Drop it from this list">×</button>
+                              </span>
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
                   );

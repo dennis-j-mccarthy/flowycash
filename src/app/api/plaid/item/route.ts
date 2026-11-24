@@ -38,6 +38,15 @@ export async function PUT(req: NextRequest) {
     await prisma.plaidItem.update({ where: { id: item.id }, data: { lastUnknown: "[]" } });
     return NextResponse.json({ ok: true });
   }
+  // PUT { itemId, removeUnknown: { date, name, amount } }: drop one row (after the user added or dismissed it).
+  if (body.removeUnknown) {
+    let list: { date: string; name: string; amount: number }[] = [];
+    try { list = JSON.parse(item.lastUnknown || "[]"); } catch { list = []; }
+    const r = body.removeUnknown;
+    list = list.filter((x) => !(x.date === r.date && x.name === r.name && Number(x.amount) === Number(r.amount)));
+    await prisma.plaidItem.update({ where: { id: item.id }, data: { lastUnknown: JSON.stringify(list) } });
+    return NextResponse.json({ ok: true });
+  }
   await prisma.plaidItem.update({
     where: { id: item.id },
     data: { trackedAccountId: body.accountId || null, trackedName: body.name || "", trackedMask: body.mask || "", cursor: null },
